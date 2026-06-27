@@ -7,6 +7,96 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<!-- ===== Firebase SDK ===== -->
+<script type="module">
+// ============================================================
+//  CONFIGURAÇÃO DO FIREBASE
+//  Substitua os valores abaixo pelos do SEU projeto Firebase.
+//  Veja o arquivo LEIA-ME-FIREBASE.txt para instruções passo a passo.
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+         updatePassword, updateEmail, reauthenticateWithCredential,
+         EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc }
+         from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyCVOjtK5lF4uqO9iYhnknsyaE3YQ2ixi3A",
+  authDomain:        "viacao-pai-eterno.firebaseapp.com",
+  projectId:         "viacao-pai-eterno",
+  storageBucket:     "viacao-pai-eterno.firebasestorage.app",
+  messagingSenderId: "699174702324",
+  appId:             "1:699174702324:web:41ccbb9a506b82f323a2a1"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ============================================================
+//  Expor funções de nuvem para o código global (não-module)
+// ============================================================
+window._fb = {
+  // Salva os dados da quinzena na nuvem
+  salvar: async function(state){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return;
+    const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+    await setDoc(doc(db, "fichas", uid, "quinzenas", chave), state);
+  },
+
+  // Carrega todos os dados do usuário (última quinzena salva + dados de configuração)
+  carregar: async function(chave){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return null;
+    const snap = await getDoc(doc(db, "fichas", uid, "quinzenas", chave));
+    return snap.exists() ? snap.data() : null;
+  },
+
+  // Salva configuração persistente do usuário (valores padrão, nome empresa etc.)
+  salvarConfig: async function(cfg){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return;
+    await setDoc(doc(db, "fichas", uid, "config", "geral"), cfg);
+  },
+
+  carregarConfig: async function(){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return null;
+    const snap = await getDoc(doc(db, "fichas", uid, "config", "geral"));
+    return snap.exists() ? snap.data() : null;
+  },
+
+  // Login com e-mail + senha (Firebase Auth)
+  login: function(email, senha){
+    return signInWithEmailAndPassword(auth, email, senha);
+  },
+
+  logout: function(){
+    return signOut(auth);
+  },
+
+  // Alterar senha
+  alterarSenha: async function(senhaAtual, novaSenha){
+    const user = auth.currentUser;
+    const cred = EmailAuthProvider.credential(user.email, senhaAtual);
+    await reauthenticateWithCredential(user, cred);
+    await updatePassword(user, novaSenha);
+  },
+
+  // Observar estado de autenticação
+  onAuth: function(callback){
+    onAuthStateChanged(auth, callback);
+  },
+
+  getEmail: function(){
+    return auth.currentUser?.email || "";
+  }
+};
+</script>
+
 <style>
 :root{
   --azul-esc:#1a2a4a; --azul-med:#2c4a8a; --azul-cl:#4a90d9;
@@ -29,12 +119,6 @@ header{
 header h1{margin:0; font-size:1.3rem; font-weight:700;}
 header .sub{font-size:.78rem; color:#9ab8d8; margin-top:2px; display:flex;
   align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;}
-#redeStatus{font-weight:700; font-size:.78rem;}
-.btn-rede{
-  background:#34495e; color:#fff; border:none; border-radius:4px;
-  padding:4px 10px; font-size:.75rem; cursor:pointer;
-}
-.btn-rede:hover{background:#3d566e;}
 
 /* ===== Tabs ===== */
 .tabs{display:flex; background:var(--card); border-bottom:2px solid var(--azul-med);
@@ -56,7 +140,7 @@ header .sub{font-size:.78rem; color:#9ab8d8; margin-top:2px; display:flex;
 .card h3{margin:0 0 10px; color:var(--azul-med); font-size:1rem;}
 .row{display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;}
 .row label{min-width:170px; font-size:.92rem;}
-input[type=text], input[type=number], select{
+input[type=text], input[type=number], input[type=email], select{
   font-family:inherit; font-size:.92rem; padding:6px 8px;
   border:1px solid #b8c4d3; border-radius:5px; background:#fff;
 }
@@ -253,29 +337,46 @@ footer{
 }
 .btn-login:hover{background:#1f3a6e;}
 .login-footer{margin-top:18px; font-size:.75rem; color:#bbb;}
-
-/* ===== Modal Alterar Senha ===== */
-#btnAlterarSenha{
-  background:none; border:none; color:#9ab8d8; font-size:.75rem;
-  cursor:pointer; text-decoration:underline; padding:0;
+.login-nuvem{
+  display:inline-block; background:#e8f5e9; color:#1e6b3a; border-radius:5px;
+  font-size:.74rem; padding:4px 10px; margin-bottom:18px; font-weight:700;
 }
-#btnAlterarSenha:hover{color:#fff;}
 
+/* ===== Loading overlay ===== */
+#loadingOverlay{
+  position:fixed; inset:0; background:rgba(26,42,74,.82);
+  display:flex; align-items:center; justify-content:center;
+  z-index:10000; flex-direction:column; gap:16px;
+}
+#loadingOverlay.hidden{display:none;}
+.spinner{
+  width:44px; height:44px; border:5px solid rgba(255,255,255,.25);
+  border-top-color:#4a90d9; border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+#loadingMsg{color:#fff; font-size:1rem; font-weight:600;}
 </style>
 </head>
 <body>
 
-<!-- ===== Tela de Login ===== -->
-<div id="loginOverlay">
+<!-- ===== Loading overlay ===== -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingMsg">Conectando à nuvem…</div>
+</div>
+
+<!-- ===== Tela de Login (Firebase Auth) ===== -->
+<div id="loginOverlay" class="hidden">
   <div class="login-box">
     <div class="login-logo">🚌</div>
     <p class="login-titulo">Ficha Diária – Controle de Ponto</p>
     <p class="login-sub">Viação Pai Eterno · Acesso restrito</p>
-    <input class="login-campo" type="text" id="loginUsuario"
-           placeholder="Usuário" autocomplete="username">
+    <div class="login-nuvem">☁️ Dados salvos na nuvem</div>
+    <input class="login-campo" type="email" id="loginEmail"
+           placeholder="E-mail" autocomplete="username">
     <input class="login-campo" type="password" id="loginSenha"
            placeholder="Senha" autocomplete="current-password">
-    <div class="login-erro" id="loginErro">Usuário ou senha incorretos.</div>
+    <div class="login-erro" id="loginErro">E-mail ou senha incorretos.</div>
     <button class="btn-login" id="btnEntrar">Entrar</button>
     <div class="login-footer">Viação Pai Eterno © 2026</div>
   </div>
@@ -286,8 +387,7 @@ footer{
   <div class="modal-box">
     <div class="modal-hdr"><h3>🔐 Alterar Senha</h3></div>
     <div class="modal-body">
-      <div class="row"><label>Usuário:</label>
-        <input type="text" id="novoUsuario" style="width:200px;"></div>
+      <p style="color:#888;font-size:.82rem;">E-mail: <b id="emailAtualLabel"></b></p>
       <div class="row"><label>Senha atual:</label>
         <input type="password" id="senhaAtual" style="width:200px;"></div>
       <div class="row"><label>Nova senha:</label>
@@ -307,8 +407,10 @@ footer{
   <h1>🚌 FICHA DIÁRIA – CONTROLE DE PONTO</h1>
   <div class="sub">
     <span>Viagem Normal · Viagem Extra · Faltas · Atestados · Excel · PDF</span>
-    <button id="btnAlterarSenha">🔐 Alterar Senha</button>
-    &nbsp;·&nbsp; <button id="btnAlterarSenha2" style="background:none;border:none;color:#9ab8d8;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;" >🚪 Sair</button>
+    <span id="emailLogado" style="color:#7fbfff;font-size:.74rem;"></span>
+    <button id="btnAlterarSenha" style="background:none;border:none;color:#9ab8d8;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;">🔐 Alterar Senha</button>
+    &nbsp;·&nbsp;
+    <button id="btnSair" style="background:none;border:none;color:#9ab8d8;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;">🚪 Sair</button>
   </div>
 </header>
 
@@ -415,7 +517,7 @@ footer{
   <button class="btn btn-blue btn-sm" id="btnAtualizar">🔄 Atualizar</button>
   <button class="btn btn-purple" id="btnPdf">📄 VISUALIZAR PDF</button>
   <button class="btn btn-green" id="btnExcel">📊 GERAR EXCEL</button>
-  <button class="btn btn-darkgreen" id="btnSalvar">💾 SALVAR</button>
+  <button class="btn btn-darkgreen" id="btnSalvar">💾 SALVAR NA NUVEM</button>
   <span id="ultimoSave"></span>
   <span id="statusMsg">Preencha os dados e gere o relatório.</span>
 </footer>
@@ -447,179 +549,13 @@ footer{
 <div id="toast"></div>
 
 <script>
-
 /* ============================================================
-   AUTENTICAÇÃO — SHA-256 via Web Crypto API
-   Usuário e hash da senha ficam em localStorage.
-   Primeira execução: cria admin/admin123 automaticamente.
-   ============================================================ */
-const AUTH_KEY  = 'fichaDiaria_auth_v1';
-const SESS_KEY  = 'fichaDiaria_sessao_ativa';
-
-async function sha256(text){
-  const buf = await crypto.subtle.digest(
-    'SHA-256', new TextEncoder().encode(text)
-  );
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-function carregarCredenciais(){
-  try{
-    return JSON.parse(localStorage.getItem(AUTH_KEY)) || null;
-  }catch{ return null; }
-}
-
-function salvarCredenciais(usuario, hashSenha){
-  localStorage.setItem(AUTH_KEY, JSON.stringify({usuario, hash: hashSenha}));
-}
-
-async function inicializarCredenciaisDefault(){
-  // Primeira execução: cria admin / admin123
-  const hash = await sha256('admin123');
-  salvarCredenciais('admin', hash);
-  return {usuario:'admin', hash};
-}
-
-function estaLogado(){
-  return sessionStorage.getItem(SESS_KEY) === '1';
-}
-
-function registrarSessao(){
-  sessionStorage.setItem(SESS_KEY, '1');
-}
-
-function encerrarSessao(){
-  sessionStorage.removeItem(SESS_KEY);
-  document.getElementById('loginOverlay').classList.remove('hidden');
-  // Limpar campos de login
-  document.getElementById('loginUsuario').value = '';
-  document.getElementById('loginSenha').value = '';
-  document.getElementById('loginErro').classList.remove('show');
-}
-
-async function tentarLogin(){
-  const usuario = document.getElementById('loginUsuario').value.trim();
-  const senha   = document.getElementById('loginSenha').value;
-  const erroEl  = document.getElementById('loginErro');
-
-  if(!usuario || !senha){
-    erroEl.textContent = 'Preencha usuário e senha.';
-    erroEl.classList.add('show');
-    return;
-  }
-
-  let cred = carregarCredenciais();
-  if(!cred){
-    cred = await inicializarCredenciaisDefault();
-  }
-
-  const hashDigitado = await sha256(senha);
-  if(usuario === cred.usuario && hashDigitado === cred.hash){
-    erroEl.classList.remove('show');
-    document.getElementById('loginOverlay').classList.add('hidden');
-    registrarSessao();
-  } else {
-    erroEl.textContent = 'Usuário ou senha incorretos.';
-    erroEl.classList.add('show');
-    document.getElementById('loginSenha').value = '';
-    document.getElementById('loginSenha').focus();
-  }
-}
-
-async function alterarSenha(){
-  const novoUsuario    = document.getElementById('novoUsuario').value.trim();
-  const senhaAtualVal  = document.getElementById('senhaAtual').value;
-  const novaSenhaVal   = document.getElementById('novaSenha').value;
-  const confirmarVal   = document.getElementById('confirmarSenha').value;
-  const erroEl         = document.getElementById('senhaErro');
-
-  erroEl.style.display = 'none';
-
-  if(!novoUsuario || !senhaAtualVal || !novaSenhaVal || !confirmarVal){
-    erroEl.textContent = 'Preencha todos os campos.';
-    erroEl.style.display = 'block'; return;
-  }
-  if(novaSenhaVal !== confirmarVal){
-    erroEl.textContent = 'Nova senha e confirmação não conferem.';
-    erroEl.style.display = 'block'; return;
-  }
-  if(novaSenhaVal.length < 4){
-    erroEl.textContent = 'A senha deve ter pelo menos 4 caracteres.';
-    erroEl.style.display = 'block'; return;
-  }
-
-  const cred = carregarCredenciais();
-  if(!cred){ erroEl.textContent = 'Erro interno.'; erroEl.style.display='block'; return; }
-
-  const hashAtual = await sha256(senhaAtualVal);
-  if(hashAtual !== cred.hash){
-    erroEl.textContent = 'Senha atual incorreta.';
-    erroEl.style.display = 'block'; return;
-  }
-
-  const novoHash = await sha256(novaSenhaVal);
-  salvarCredenciais(novoUsuario, novoHash);
-
-  document.getElementById('modalSenha').classList.remove('show');
-  // Limpar campos
-  ['novoUsuario','senhaAtual','novaSenha','confirmarSenha'].forEach(id=>{
-    document.getElementById(id).value='';
-  });
-  showToast('✔ Senha alterada com sucesso!');
-}
-
-function initAuth(){
-  const overlay = document.getElementById('loginOverlay');
-
-  // Se já está logado nesta aba, esconde o overlay
-  if(estaLogado()){
-    overlay.classList.add('hidden');
-  }
-
-  // Enter nos campos de login
-  ['loginUsuario','loginSenha'].forEach(id=>{
-    document.getElementById(id).addEventListener('keydown', e=>{
-      if(e.key === 'Enter') tentarLogin();
-    });
-  });
-  document.getElementById('btnEntrar').addEventListener('click', tentarLogin);
-
-  // Botão Alterar Senha (no header)
-  document.getElementById('btnAlterarSenha').addEventListener('click', ()=>{
-    const cred = carregarCredenciais();
-    document.getElementById('novoUsuario').value = cred ? cred.usuario : 'admin';
-    document.getElementById('modalSenha').classList.add('show');
-  });
-
-  // Botão Sair
-  document.getElementById('btnAlterarSenha2').addEventListener('click', encerrarSessao);
-
-  // Modal Alterar Senha
-  document.getElementById('btnFecharSenha').addEventListener('click', ()=>{
-    document.getElementById('modalSenha').classList.remove('show');
-  });
-  document.getElementById('btnSalvarSenha').addEventListener('click', alterarSenha);
-
-  // Na primeira execução criar credenciais default e informar usuário
-  if(!carregarCredenciais()){
-    inicializarCredenciaisDefault().then(()=>{
-      document.getElementById('loginErro').textContent =
-        'Primeira execução: usuário "admin", senha "admin123". Altere após entrar.';
-      document.getElementById('loginErro').style.color = '#2980b9';
-      document.getElementById('loginErro').classList.add('show');
-    });
-  }
-}
-
-
-/* ============================================================
-   Ficha Diária – Controle de Ponto (versão Web)
-   Espelha a lógica da versão desktop Python/tkinter
+   Ficha Diária – Controle de Ponto (versão Web + Firebase)
+   Dados salvos no Firestore. Auth via Firebase Authentication.
    ============================================================ */
 
 // ----------------------- Constantes -----------------------
-const ABREV_CURTA = ["D","S","T","Q","Q","S","S"]; // getDay(): 0=Dom...6=Sab
+const ABREV_CURTA = ["D","S","T","Q","Q","S","S"];
 const MESES_PT = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho",
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
@@ -632,7 +568,6 @@ const PALETA_MOTOR = [
   ["#4a7a6a","#d5ede8"], ["#7a5a4a","#f0e5de"],
 ];
 
-// Estados de célula: ciclo completo
 const CICLO_CELULA = ["", "V20", "V11", "VE20", "VE11", "F", "A"];
 const LABEL_CELULA = {
   "": "·", "V20":"V\n20:00", "V11":"V\n11:00",
@@ -642,7 +577,8 @@ const COR_CELULA_BG = {
   "":"#e8edf4", "V20":"#5b8fd4", "V11":"#3a70b8",
   "VE20":"#4aaa80", "VE11":"#2d8a60", "F":"#d9534f", "A":"#5aaa6a"
 };
-const COR_CELULA_FG = {}; CICLO_CELULA.forEach(k => COR_CELULA_FG[k] = (k==="" ? "#1a2a4a" : "#ffffff"));
+const COR_CELULA_FG = {};
+CICLO_CELULA.forEach(k => COR_CELULA_FG[k] = (k==="" ? "#1a2a4a" : "#ffffff"));
 
 // ----------------------- Estado global -----------------------
 let state = {
@@ -651,67 +587,227 @@ let state = {
   quinzena: 2,
   valorViagem: 350,
   bonificacao: 750,
-  motoristas: [],         // [{nome, horarios:["20:00","11:00"]}]
-  marcacoes: {},          // chave "i,d" -> estado
-  observacoes: [],        // [{motorIdx, texto}]
+  motoristas: [],
+  marcacoes: {},
+  observacoes: [],
 };
 
 let bloquearToggle = false;
-let editando = false;
+let _appPronto = false; // true após login e carregamento
 
-// ----------------------- Persistência (localStorage) -----------------------
-const LS_KEY = "fichaDiaria_sessao_v1";
+// ----------------------- Loading overlay -----------------------
+function mostrarLoading(msg){
+  document.getElementById('loadingMsg').textContent = msg || "Aguarde…";
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+function ocultarLoading(){
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
 
-function salvarSessao(){
+// ----------------------- Persistência na nuvem (Firebase) -----------------------
+async function salvarSessao(){
+  if(!_appPronto) return;
   try{
     coletarFormularioParaState();
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    await window._fb.salvar(state);
     const hora = new Date().toLocaleTimeString('pt-BR');
     const lbl = document.getElementById('ultimoSave');
-    if(lbl){ lbl.textContent = `💾 Salvo às ${hora}`; lbl.style.color = "#2ecc71"; }
+    if(lbl){ lbl.textContent = `☁️ Salvo às ${hora}`; lbl.style.color = "#2ecc71"; }
   }catch(e){
     const lbl = document.getElementById('ultimoSave');
     if(lbl){ lbl.textContent = "⚠ Erro ao salvar!"; lbl.style.color = "#e74c3c"; }
-    console.error("Erro ao salvar sessão:", e);
+    console.error("Erro ao salvar na nuvem:", e);
   }
 }
 
-function carregarSessao(silencioso){
+async function carregarSessao(){
   try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return false;
-    const dados = JSON.parse(raw);
-    state.ano = dados.ano || new Date().getFullYear();
-    state.mes = dados.mes || (new Date().getMonth()+1);
-    state.quinzena = dados.quinzena || 2;
-    state.valorViagem = dados.valorViagem ?? 350;
-    state.bonificacao = dados.bonificacao ?? 750;
-    state.motoristas = Array.isArray(dados.motoristas) ? dados.motoristas : [];
-    state.marcacoes = dados.marcacoes && typeof dados.marcacoes === 'object' ? dados.marcacoes : {};
-    state.observacoes = Array.isArray(dados.observacoes) ? dados.observacoes : [];
-    if(!silencioso) showToast("💾 Dados carregados.");
+    coletarFormularioParaState();
+    const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+    mostrarLoading("Carregando dados da nuvem…");
+    const dados = await window._fb.carregar(chave);
+    ocultarLoading();
+    if(!dados) return false;
+    state.ano           = dados.ano           || state.ano;
+    state.mes           = dados.mes           || state.mes;
+    state.quinzena      = dados.quinzena      || state.quinzena;
+    state.valorViagem   = dados.valorViagem   ?? 350;
+    state.bonificacao   = dados.bonificacao   ?? 750;
+    state.motoristas    = Array.isArray(dados.motoristas)  ? dados.motoristas  : [];
+    state.marcacoes     = (dados.marcacoes && typeof dados.marcacoes==='object') ? dados.marcacoes : {};
+    state.observacoes   = Array.isArray(dados.observacoes) ? dados.observacoes : [];
     return true;
   }catch(e){
-    console.error("Erro ao carregar sessão:", e);
+    ocultarLoading();
+    console.error("Erro ao carregar da nuvem:", e);
     return false;
   }
 }
 
-function coletarFormularioParaState(){
-  state.ano = parseInt(document.getElementById('inAno').value) || state.ano;
-  state.mes = parseInt(document.getElementById('inMes').value) || state.mes;
-  const qEl = document.querySelector('input[name=quinz]:checked');
-  state.quinzena = qEl ? parseInt(qEl.value) : state.quinzena;
-  state.valorViagem = parseFloat(document.getElementById('inValorViagem').value) || 0;
-  state.bonificacao = parseFloat(document.getElementById('inBonificacao').value) || 0;
-  // motoristas e observações já são mantidos em sync direto no state pelos handlers
+// Quando muda mês/quinzena, busca aquele período da nuvem
+async function carregarPeriodo(){
+  mostrarLoading("Buscando dados da quinzena…");
+  coletarFormularioParaState();
+  const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+  try{
+    const dados = await window._fb.carregar(chave);
+    ocultarLoading();
+    if(dados){
+      state.motoristas  = Array.isArray(dados.motoristas)  ? dados.motoristas  : state.motoristas;
+      state.marcacoes   = (dados.marcacoes && typeof dados.marcacoes==='object') ? dados.marcacoes : {};
+      state.observacoes = Array.isArray(dados.observacoes) ? dados.observacoes : [];
+      showToast("☁️ Período carregado da nuvem.");
+    } else {
+      // Período novo: mantém motoristas mas limpa marcações
+      state.marcacoes   = {};
+      state.observacoes = [];
+      showToast("Novo período — sem dados anteriores.");
+    }
+  }catch(e){
+    ocultarLoading();
+    console.error(e);
+  }
+  renderTudo();
+}
+
+// ----------------------- Auth Firebase -----------------------
+function initAuth(){
+  const overlay    = document.getElementById('loginOverlay');
+  const loadingEl  = document.getElementById('loadingOverlay');
+
+  // Aguarda Firebase dizer se há sessão ativa
+  // _fb pode demorar um momento para estar disponível (módulo ES)
+  const esperarFb = setInterval(()=>{
+    if(!window._fb) return;
+    clearInterval(esperarFb);
+
+    window._fb.onAuth(async (user) => {
+      if(user){
+        // Usuário autenticado
+        overlay.classList.add('hidden');
+        document.getElementById('emailLogado').textContent = user.email;
+        mostrarLoading("Carregando dados da nuvem…");
+
+        // Carrega dados iniciais
+        const tinhaDados = await carregarSessao();
+        if(!tinhaDados && state.motoristas.length === 0){
+          state.motoristas = [
+            {nome:"", horarios:["20:00","11:00"]},
+            {nome:"", horarios:["20:00","11:00"]},
+          ];
+        }
+        _appPronto = true;
+        ocultarLoading();
+        initTabsEBotoes();
+        renderTudo();
+        setStatus(tinhaDados ? "☁️ Dados restaurados da nuvem." : "Preencha os dados e gere o relatório.",
+                  tinhaDados ? "#27ae60" : "#9ab8d8");
+      } else {
+        // Não autenticado — mostra login
+        _appPronto = false;
+        overlay.classList.remove('hidden');
+        ocultarLoading();
+      }
+    });
+  }, 100);
+
+  // Botão entrar
+  document.getElementById('btnEntrar').addEventListener('click', tentarLogin);
+  ['loginEmail','loginSenha'].forEach(id=>{
+    document.getElementById(id).addEventListener('keydown', e=>{
+      if(e.key==='Enter') tentarLogin();
+    });
+  });
+
+  // Sair
+  document.getElementById('btnSair').addEventListener('click', async ()=>{
+    await window._fb.logout();
+    // onAuth() dispara automaticamente e mostra login
+  });
+
+  // Alterar senha
+  document.getElementById('btnAlterarSenha').addEventListener('click', ()=>{
+    document.getElementById('emailAtualLabel').textContent = window._fb.getEmail();
+    ['senhaAtual','novaSenha','confirmarSenha'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('senhaErro').style.display='none';
+    document.getElementById('modalSenha').classList.add('show');
+  });
+  document.getElementById('btnFecharSenha').addEventListener('click', ()=>
+    document.getElementById('modalSenha').classList.remove('show'));
+  document.getElementById('btnSalvarSenha').addEventListener('click', alterarSenha);
+}
+
+async function tentarLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const senha  = document.getElementById('loginSenha').value;
+  const erroEl = document.getElementById('loginErro');
+  erroEl.classList.remove('show');
+
+  if(!email || !senha){
+    erroEl.textContent = 'Preencha e-mail e senha.';
+    erroEl.classList.add('show');
+    return;
+  }
+
+  document.getElementById('btnEntrar').disabled = true;
+  document.getElementById('btnEntrar').textContent = 'Entrando…';
+  try{
+    await window._fb.login(email, senha);
+    // onAuth() cuida do resto
+  }catch(err){
+    erroEl.textContent = traduzirErroFirebase(err.code);
+    erroEl.classList.add('show');
+    document.getElementById('loginSenha').value = '';
+  }finally{
+    document.getElementById('btnEntrar').disabled = false;
+    document.getElementById('btnEntrar').textContent = 'Entrar';
+  }
+}
+
+async function alterarSenha(){
+  const senhaAtualVal  = document.getElementById('senhaAtual').value;
+  const novaSenhaVal   = document.getElementById('novaSenha').value;
+  const confirmarVal   = document.getElementById('confirmarSenha').value;
+  const erroEl         = document.getElementById('senhaErro');
+  erroEl.style.display = 'none';
+
+  if(!senhaAtualVal || !novaSenhaVal || !confirmarVal){
+    erroEl.textContent = 'Preencha todos os campos.'; erroEl.style.display='block'; return;
+  }
+  if(novaSenhaVal !== confirmarVal){
+    erroEl.textContent = 'Nova senha e confirmação não conferem.'; erroEl.style.display='block'; return;
+  }
+  if(novaSenhaVal.length < 6){
+    erroEl.textContent = 'A nova senha deve ter pelo menos 6 caracteres.'; erroEl.style.display='block'; return;
+  }
+  try{
+    await window._fb.alterarSenha(senhaAtualVal, novaSenhaVal);
+    document.getElementById('modalSenha').classList.remove('show');
+    showToast('✔ Senha alterada com sucesso!');
+  }catch(err){
+    erroEl.textContent = traduzirErroFirebase(err.code);
+    erroEl.style.display = 'block';
+  }
+}
+
+function traduzirErroFirebase(code){
+  const map = {
+    'auth/invalid-email':          'E-mail inválido.',
+    'auth/user-not-found':         'Usuário não encontrado.',
+    'auth/wrong-password':         'Senha incorreta.',
+    'auth/invalid-credential':     'E-mail ou senha incorretos.',
+    'auth/too-many-requests':      'Muitas tentativas. Tente novamente mais tarde.',
+    'auth/network-request-failed': 'Sem conexão com a internet.',
+    'auth/weak-password':          'Senha muito fraca (mínimo 6 caracteres).',
+  };
+  return map[code] || `Erro: ${code}`;
 }
 
 // ----------------------- Utilidades de data -----------------------
 function diasNaQuinzena(ano, mes, quinz){
   const ultimoDiaMes = new Date(ano, mes, 0).getDate();
   const inicio = quinz === 1 ? 1 : 16;
-  const fim = quinz === 1 ? 15 : ultimoDiaMes;
+  const fim    = quinz === 1 ? 15 : ultimoDiaMes;
   const dias = [];
   for(let d=inicio; d<=fim; d++){
     const dow = new Date(ano, mes-1, d).getDay();
@@ -724,14 +820,8 @@ function nomeMotorista(i){
   const m = state.motoristas[i];
   return (m && m.nome && m.nome.trim()) ? m.nome.trim() : `Motorista ${i+1}`;
 }
-
-function corMotorista(i){
-  return PALETA_MOTOR[i % PALETA_MOTOR.length];
-}
-
-function fmtMoeda(v){
-  return "R$ " + (v||0).toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0});
-}
+function corMotorista(i){ return PALETA_MOTOR[i % PALETA_MOTOR.length]; }
+function fmtMoeda(v){ return "R$ " + (v||0).toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0}); }
 
 // ----------------------- Toast -----------------------
 let toastTimer = null;
@@ -742,21 +832,20 @@ function showToast(msg){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> t.classList.remove('show'), 2600);
 }
-
 function setStatus(msg, cor){
   const el = document.getElementById('statusMsg');
   el.textContent = msg;
   el.style.color = cor || "#9ab8d8";
 }
 
-// ----------------------- Modal de confirmação genérico -----------------------
+// ----------------------- Modal confirmação genérico -----------------------
 function confirmar(titulo, texto){
   return new Promise(resolve=>{
     const overlay = document.getElementById('modalConfirm');
     document.getElementById('confirmTitulo').textContent = titulo;
-    document.getElementById('confirmTexto').textContent = texto;
+    document.getElementById('confirmTexto').textContent  = texto;
     overlay.classList.add('show');
-    const okBtn = document.getElementById('confirmOk');
+    const okBtn     = document.getElementById('confirmOk');
     const cancelBtn = document.getElementById('confirmCancelar');
     function cleanup(result){
       overlay.classList.remove('show');
@@ -764,15 +853,25 @@ function confirmar(titulo, texto){
       cancelBtn.removeEventListener('click', onCancel);
       resolve(result);
     }
-    function onOk(){ cleanup(true); }
+    function onOk()    { cleanup(true);  }
     function onCancel(){ cleanup(false); }
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
   });
 }
 
+// ----------------------- Coleta formulário → state -----------------------
+function coletarFormularioParaState(){
+  state.ano        = parseInt(document.getElementById('inAno').value)         || state.ano;
+  state.mes        = parseInt(document.getElementById('inMes').value)         || state.mes;
+  const qEl        = document.querySelector('input[name=quinz]:checked');
+  state.quinzena   = qEl ? parseInt(qEl.value) : state.quinzena;
+  state.valorViagem = parseFloat(document.getElementById('inValorViagem').value) || 0;
+  state.bonificacao = parseFloat(document.getElementById('inBonificacao').value) || 0;
+}
+
 /* ============================================================
-   Cálculo de totais (espelha calcular_totais do Python)
+   Cálculo de totais
    ============================================================ */
 function calcularTotais(){
   const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena).map(d=>d.dia);
@@ -787,7 +886,7 @@ function calcularTotais(){
     });
     const valNormal = vn * state.valorViagem;
     const valExtra  = ve * state.valorViagem;
-    const total = valNormal + valExtra + state.bonificacao;
+    const total     = valNormal + valExtra + state.bonificacao;
     return {
       nome: nomeMotorista(i),
       horarios: ["20:00","11:00"],
@@ -802,7 +901,8 @@ function calcularTotais(){
    ============================================================ */
 function initTabCfg(){
   const selMes = document.getElementById('inMes');
-  selMes.innerHTML = MESES_PT.slice(1).map((m,idx)=>`<option value="${idx+1}">${m}</option>`).join('');
+  selMes.innerHTML = MESES_PT.slice(1).map((m,idx)=>
+    `<option value="${idx+1}">${m}</option>`).join('');
   document.getElementById('inAno').value = state.ano;
   selMes.value = state.mes;
   document.querySelector(`input[name=quinz][value="${state.quinzena}"]`).checked = true;
@@ -814,26 +914,19 @@ function initTabCfg(){
   document.querySelectorAll('input[name=quinz]').forEach(r=>
     r.addEventListener('change', onPeriodoChange));
   document.getElementById('inValorViagem').addEventListener('input', debounce(onValoresChange, 500));
-  document.getElementById('inBonificacao').addEventListener('input', debounce(onValoresChange, 500));
+  document.getElementById('inBonificacao').addEventListener('input',  debounce(onValoresChange, 500));
 }
 
 function onPeriodoChange(){
-  coletarFormularioParaState();
-  // Trocar mês/quinzena NÃO limpa nada -- apenas reconstrói a grade e salva
-  rebuildGrade();
-  salvarSessao();
+  // Ao trocar mês/quinzena, busca aquela quinzena na nuvem
+  carregarPeriodo();
 }
-
 function onValoresChange(){
   coletarFormularioParaState();
   atualizarResumo();
   salvarSessao();
 }
-
-function debounce(fn, ms){
-  let t;
-  return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
-}
+function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
 
 /* ============================================================
    ABA 2 — Motoristas & Horários
@@ -864,12 +957,11 @@ function renderMotoristas(){
       </div>`;
     wrap.appendChild(card);
   });
-
   wrap.querySelectorAll('[data-action="rem-mot"]').forEach(btn=>
     btn.addEventListener('click', onRemoverMotorista));
   wrap.querySelectorAll('[data-action="nome-mot"]').forEach(inp=>{
     inp.addEventListener('input', debounce(onNomeMotoristaChange, 600));
-    inp.addEventListener('blur', onNomeMotoristaBlur);
+    inp.addEventListener('blur',  onNomeMotoristaBlur);
   });
 }
 
@@ -892,23 +984,20 @@ async function onRemoverMotorista(e){
     return;
   }
   const idx = parseInt(e.target.dataset.idx);
-  const ok = await confirmar("Remover motorista", `Remover "${nomeMotorista(idx)}"? As marcações dele serão apagadas.`);
+  const ok  = await confirmar("Remover motorista",
+    `Remover "${nomeMotorista(idx)}"? As marcações dele serão apagadas.`);
   if(!ok) return;
   state.motoristas.splice(idx,1);
-  // Reindexar marcações
   const novasMarc = {};
   Object.keys(state.marcacoes).forEach(key=>{
     const [i,d] = key.split(",").map(Number);
     if(i < idx) novasMarc[key] = state.marcacoes[key];
     else if(i > idx) novasMarc[`${i-1},${d}`] = state.marcacoes[key];
-    // i === idx: descartado
   });
   state.marcacoes = novasMarc;
-  // Reindexar observações
   state.observacoes = state.observacoes
     .filter(o=>o.motorIdx !== idx)
     .map(o=> o.motorIdx > idx ? {...o, motorIdx:o.motorIdx-1} : o);
-
   renderMotoristas();
   rebuildGrade();
   renderObservacoes();
@@ -922,23 +1011,20 @@ function onNomeMotoristaChange(e){
   atualizarNomesGrade();
   rebuildObsSelects();
 }
-
 function onNomeMotoristaBlur(e){
   onNomeMotoristaChange(e);
   salvarSessao();
 }
 
 /* ============================================================
-   ABA 3 — Marcações de Ponto (grade com header/coluna fixos)
+   ABA 3 — Marcações de Ponto
    ============================================================ */
 function rebuildGrade(){
-  // Bloquear toggles por um instante para absorver clique residual
   bloquearToggle = true;
   setTimeout(()=> bloquearToggle = false, 250);
 
   const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena);
 
-  // Inicializar marcações ausentes como ""
   state.motoristas.forEach((_,i)=>{
     dias.forEach(({dia})=>{
       const key = `${i},${dia}`;
@@ -946,20 +1032,17 @@ function rebuildGrade(){
     });
   });
 
-  // --- Cabeçalho de dias ---
   const hdrInner = document.getElementById('gradeHdrInner');
   hdrInner.innerHTML = dias.map(({dia,sem,dom})=>
     `<div class="grade-hdr-cell ${dom?'dom':''}">${dia}<br>${sem}</div>`
   ).join('');
 
-  // --- Nomes (coluna fixa) ---
   const nomesScroll = document.getElementById('gradeNomesScroll');
   nomesScroll.innerHTML = state.motoristas.map((m,i)=>{
     const [bgDark] = corMotorista(i);
     return `<div class="nome-cell" style="background:${bgDark}" title="${escapeHtml(nomeMotorista(i))}">${escapeHtml(nomeMotorista(i))}</div>`;
   }).join('');
 
-  // --- Corpo da grade ---
   const bodyInner = document.getElementById('gradeBodyInner');
   bodyInner.innerHTML = "";
   state.motoristas.forEach((m,i)=>{
@@ -967,57 +1050,47 @@ function rebuildGrade(){
     row.className = "grade-row";
     dias.forEach(({dia})=>{
       const estado = state.marcacoes[`${i},${dia}`] || "";
-      const cel = document.createElement('div');
+      const cel    = document.createElement('div');
       cel.className = "cel-marc";
       cel.dataset.i = i;
       cel.dataset.d = dia;
       cel.style.background = COR_CELULA_BG[estado];
-      cel.style.color = COR_CELULA_FG[estado];
-      cel.textContent = LABEL_CELULA[estado];
+      cel.style.color      = COR_CELULA_FG[estado];
+      cel.textContent      = LABEL_CELULA[estado];
       cel.addEventListener('click', onToggleCelula);
       row.appendChild(cel);
     });
     bodyInner.appendChild(row);
   });
 
-  // Sincronizar scroll: header acompanha scroll horizontal do corpo,
-  // nomes acompanham scroll vertical do corpo
-  const hdrScroll = document.getElementById('gradeHdrScroll');
+  const hdrScroll  = document.getElementById('gradeHdrScroll');
   const bodyScroll = document.getElementById('gradeBodyScroll');
   bodyScroll.onscroll = ()=>{
-    hdrScroll.scrollLeft = bodyScroll.scrollLeft;
+    hdrScroll.scrollLeft  = bodyScroll.scrollLeft;
     nomesScroll.scrollTop = bodyScroll.scrollTop;
   };
-
-  // Resetar scroll para o topo/início (Motorista 1 sempre visível primeiro)
-  bodyScroll.scrollTop = 0;
-  bodyScroll.scrollLeft = 0;
-  hdrScroll.scrollLeft = 0;
-  nomesScroll.scrollTop = 0;
-
+  bodyScroll.scrollTop = 0; bodyScroll.scrollLeft = 0;
+  hdrScroll.scrollLeft = 0; nomesScroll.scrollTop = 0;
   atualizarResumo();
 }
 
 function onToggleCelula(e){
-  if(bloquearToggle) return; // ignora clique residual logo após rebuild
-  const i = parseInt(e.currentTarget.dataset.i);
-  const d = parseInt(e.currentTarget.dataset.d);
+  if(bloquearToggle) return;
+  const i   = parseInt(e.currentTarget.dataset.i);
+  const d   = parseInt(e.currentTarget.dataset.d);
   const key = `${i},${d}`;
-  const atual = state.marcacoes[key] || "";
-  const idx = CICLO_CELULA.indexOf(atual);
+  const idx = CICLO_CELULA.indexOf(state.marcacoes[key] || "");
   const novo = CICLO_CELULA[(idx+1) % CICLO_CELULA.length];
   state.marcacoes[key] = novo;
   e.currentTarget.style.background = COR_CELULA_BG[novo];
-  e.currentTarget.style.color = COR_CELULA_FG[novo];
-  e.currentTarget.textContent = LABEL_CELULA[novo];
+  e.currentTarget.style.color      = COR_CELULA_FG[novo];
+  e.currentTarget.textContent      = LABEL_CELULA[novo];
   atualizarResumo();
   salvarSessao();
 }
 
 function atualizarNomesGrade(){
-  // Atualiza apenas o texto dos labels de nome, sem recriar a grade inteira
-  const nomesScroll = document.getElementById('gradeNomesScroll');
-  const cells = nomesScroll.querySelectorAll('.nome-cell');
+  const cells = document.getElementById('gradeNomesScroll').querySelectorAll('.nome-cell');
   cells.forEach((cell,i)=>{
     const nome = nomeMotorista(i);
     cell.textContent = nome;
@@ -1032,7 +1105,7 @@ function atualizarNomesGrade(){
 function atualizarResumo(){
   coletarFormularioParaState();
   const totais = calcularTotais();
-  const body = document.getElementById('resumoBody');
+  const body   = document.getElementById('resumoBody');
   body.innerHTML = totais.map(t=>`
     <tr>
       <td class="nome">${escapeHtml(t.nome)}</td>
@@ -1047,12 +1120,11 @@ function atualizarResumo(){
       <td><b>${fmtMoeda(t.total)}</b></td>
     </tr>`).join('');
   const totalGeral = totais.reduce((s,t)=>s+t.total,0);
-  document.getElementById('totalGeral').textContent =
-    `TOTAL GERAL A PAGAR: ${fmtMoeda(totalGeral)}`;
+  document.getElementById('totalGeral').textContent = `TOTAL GERAL A PAGAR: ${fmtMoeda(totalGeral)}`;
 }
 
 /* ============================================================
-   ABA 4 — Observações (lista dinâmica, independente dos motoristas)
+   ABA 4 — Observações
    ============================================================ */
 function renderObservacoes(){
   const wrap = document.getElementById('listaObs');
@@ -1070,7 +1142,7 @@ function renderObservacoes(){
     entry.innerHTML = `
       <div class="obs-row">
         <label>Motorista:</label>
-        <select data-action="obs-motor" data-idx="${idx}">${opts || '<option>(sem motoristas)</option>'}</select>
+        <select data-action="obs-motor" data-idx="${idx}">${opts||'<option>(sem motoristas)</option>'}</select>
         <button class="btn btn-red btn-sm" data-action="obs-rem" data-idx="${idx}" style="margin-left:auto;">✖</button>
       </div>
       <div class="obs-row">
@@ -1079,45 +1151,50 @@ function renderObservacoes(){
       </div>`;
     wrap.appendChild(entry);
   });
-
   wrap.querySelectorAll('[data-action="obs-motor"]').forEach(sel=>
     sel.addEventListener('change', e=>{
-      const idx = parseInt(e.target.dataset.idx);
-      state.observacoes[idx].motorIdx = parseInt(e.target.value);
+      state.observacoes[parseInt(e.target.dataset.idx)].motorIdx = parseInt(e.target.value);
       salvarSessao();
     }));
-  wrap.querySelectorAll('[data-action="obs-texto"]').forEach(inp=>{
+  wrap.querySelectorAll('[data-action="obs-texto"]').forEach(inp=>
     inp.addEventListener('input', debounce(e=>{
-      const idx = parseInt(e.target.dataset.idx);
-      state.observacoes[idx].texto = e.target.value;
+      state.observacoes[parseInt(e.target.dataset.idx)].texto = e.target.value;
       salvarSessao();
-    }, 500));
-  });
+    }, 500)));
   wrap.querySelectorAll('[data-action="obs-rem"]').forEach(btn=>
     btn.addEventListener('click', e=>{
-      const idx = parseInt(e.target.dataset.idx);
-      state.observacoes.splice(idx,1);
+      state.observacoes.splice(parseInt(e.target.dataset.idx), 1);
       renderObservacoes();
       salvarSessao();
     }));
 }
 
 function onAddObs(){
-  state.observacoes.push({motorIdx: 0, texto: ""});
+  state.observacoes.push({motorIdx:0, texto:""});
   renderObservacoes();
   salvarSessao();
 }
-
-function rebuildObsSelects(){
-  // Reconstroi a lista de observações para refletir nomes/qtd atualizados de motoristas
-  renderObservacoes();
-}
-
+function rebuildObsSelects(){ renderObservacoes(); }
 function obsParaMotorista(i){
   return state.observacoes
     .filter(o=>o.motorIdx===i && o.texto && o.texto.trim())
-    .map(o=>o.texto.trim())
-    .join(' | ');
+    .map(o=>o.texto.trim()).join(' | ');
+}
+
+/* ============================================================
+   Nova Quinzena
+   ============================================================ */
+async function onNovaQuinzena(){
+  const ok = await confirmar("Nova Quinzena",
+    "Isso vai limpar todas as marcações de ponto e observações, " +
+    "mantendo os motoristas cadastrados.\n\nTem certeza? (salve o relatório antes se necessário)");
+  if(!ok) return;
+  state.marcacoes   = {};
+  state.observacoes = [];
+  rebuildGrade();
+  renderObservacoes();
+  salvarSessao();
+  setStatus("✔ Pronto para nova quinzena.", "#27ae60");
 }
 
 /* ============================================================
@@ -1126,30 +1203,25 @@ function obsParaMotorista(i){
 function gerarExcel(){
   coletarFormularioParaState();
   if(!state.motoristas.some(m=>m.nome && m.nome.trim())){
-    alert("Preencha ao menos um nome de motorista.");
-    return;
+    alert("Preencha ao menos um nome de motorista."); return;
   }
-  const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena);
+  const dias   = diasNaQuinzena(state.ano, state.mes, state.quinzena);
   const totais = calcularTotais();
-  const mn = MESES_PT[state.mes].toUpperCase();
-  const qs = `${state.quinzena}ª QUINZENA ${mn} ${state.ano}`;
-
-  const aoa = [];
-  const lastColIdx = 2 + dias.length - 1;
+  const mn     = MESES_PT[state.mes].toUpperCase();
+  const qs     = `${state.quinzena}ª QUINZENA ${mn} ${state.ano}`;
+  const aoa    = [];
 
   aoa.push(["CONTROLE DE PONTO"]);
   aoa.push([qs]);
   aoa.push([]);
 
-  // Bloco viagem normal
   aoa.push(["▶ VIAGEM NORMAL"]);
   aoa.push(["Motorista", ...dias.map(d=>`${d.dia}/${d.sem}`), "TOTAL V","FALTAS","ATESTADO"]);
   state.motoristas.forEach((m,i)=>{
     const row = [nomeMotorista(i)];
     dias.forEach(({dia})=>{
       const v = state.marcacoes[`${i},${dia}`] || "";
-      const lbl = {"V20":"V 20:00","V11":"V 11:00","VE20":"","VE11":"","F":"F","A":"A","":""}[v];
-      row.push(lbl);
+      row.push({"V20":"V 20:00","V11":"V 11:00","VE20":"","VE11":"","F":"F","A":"A","":""}[v]);
     });
     const t = totais[i];
     row.push(t.viagensNormal, t.faltas, t.atestados);
@@ -1157,15 +1229,13 @@ function gerarExcel(){
   });
   aoa.push([]);
 
-  // Bloco viagem extra
   aoa.push(["▶ VIAGEM EXTRA"]);
   aoa.push(["Motorista", ...dias.map(d=>`${d.dia}/${d.sem}`), "TOTAL VE","VLR EXTRA"]);
   state.motoristas.forEach((m,i)=>{
     const row = [nomeMotorista(i)];
     dias.forEach(({dia})=>{
       const v = state.marcacoes[`${i},${dia}`] || "";
-      const lbl = (v==="VE20") ? "VE 20:00" : (v==="VE11") ? "VE 11:00" : "";
-      row.push(lbl);
+      row.push(v==="VE20" ? "VE 20:00" : v==="VE11" ? "VE 11:00" : "");
     });
     const t = totais[i];
     row.push(t.viagensExtra, t.valExtra);
@@ -1173,62 +1243,51 @@ function gerarExcel(){
   });
   aoa.push([]);
 
-  // Resumo financeiro
   aoa.push(["▶ RESUMO FINANCEIRO – MOTORISTAS A PAGAR"]);
   aoa.push(["Motorista","Horários","V.Normal","V.Extra","Faltas","Atestados",
              "Vlr.Normal","Vlr.Extra","Bonificação","TOTAL A PAGAR","Observação"]);
   let totalGeral = 0;
   totais.forEach((t,i)=>{
     aoa.push([t.nome, t.horarios.join(' / '), t.viagensNormal, t.viagensExtra,
-               t.faltas, t.atestados, t.valNormal, t.valExtra, t.bonificacao, t.total,
-               obsParaMotorista(i)]);
+              t.faltas, t.atestados, t.valNormal, t.valExtra, t.bonificacao, t.total,
+              obsParaMotorista(i)]);
     totalGeral += t.total;
   });
   aoa.push(["TOTAL GERAL","","","","","","","","",totalGeral,""]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  // Larguras de coluna aproximadas
   ws['!cols'] = [{wch:26},{wch:10}, ...dias.map(()=>({wch:6}))];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, qs.substring(0,31));
-
-  const filename = `FICHA_${state.quinzena}Q_${mn}_${state.ano}.xlsx`;
-  XLSX.writeFile(wb, filename);
-  setStatus(`✔ Excel gerado: ${filename}`, "#27ae60");
+  XLSX.writeFile(wb, `FICHA_${state.quinzena}Q_${mn}_${state.ano}.xlsx`);
+  setStatus(`✔ Excel gerado.`, "#27ae60");
   showToast("Planilha Excel baixada!");
 }
 
 /* ============================================================
    Geração de PDF (jsPDF + autoTable)
    ============================================================ */
-function montarDadosPdf(){
-  coletarFormularioParaState();
-  const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena);
-  const totais = calcularTotais();
-  const mesNome = MESES_PT[state.mes];
-  const quinzStr = `${state.quinzena}ª Quinzena de ${mesNome} de ${state.ano}`;
-  return {dias, totais, quinzStr};
-}
-
 function gerarPdfDoc(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
-  const {dias, totais, quinzStr} = montarDadosPdf();
+  coletarFormularioParaState();
+  const dias    = diasNaQuinzena(state.ano, state.mes, state.quinzena);
+  const totais  = calcularTotais();
+  const mesNome = MESES_PT[state.mes];
+  const quinzStr = `${state.quinzena}ª Quinzena de ${mesNome} de ${state.ano}`;
 
-  doc.setFontSize(16); doc.setTextColor(26,42,74);
-  doc.setFont(undefined,'bold');
+  doc.setFontSize(16); doc.setTextColor(26,42,74); doc.setFont(undefined,'bold');
   doc.text("CONTROLE DE PONTO", doc.internal.pageSize.getWidth()/2, 14, {align:'center'});
   doc.setFontSize(11); doc.setTextColor(44,74,138);
   doc.text(quinzStr.toUpperCase(), doc.internal.pageSize.getWidth()/2, 21, {align:'center'});
 
   const PDF_LBL = {"":"·","V20":"V 20h","V11":"V 11h","VE20":"VE 20h","VE11":"VE 11h","F":"F","A":"A"};
   const PDF_COR = {
-    "V20":[36,113,163], "V11":[26,82,118],
-    "VE20":[17,122,101], "VE11":[11,83,69],
-    "F":[192,57,43], "A":[30,132,73]
+    "V20":[36,113,163],"V11":[26,82,118],
+    "VE20":[17,122,101],"VE11":[11,83,69],
+    "F":[192,57,43],"A":[30,132,73]
   };
 
-  // Tabela de marcações
   const head1 = [["Motorista", ...dias.map(d=>`${d.dia}\n${d.sem}`)]];
   const body1 = state.motoristas
     .map((m,i)=> m.nome ? [nomeMotorista(i), ...dias.map(({dia})=> PDF_LBL[state.marcacoes[`${i},${dia}`]||""] || "·")] : null)
@@ -1241,24 +1300,15 @@ function gerarPdfDoc(){
     columnStyles:{0:{halign:'left', cellWidth:32}},
     didParseCell: function(data){
       if(data.section==='body' && data.column.index===0){
-        const idx = data.row.index;
-        const [bgDark] = corMotorista(idx);
-        const rgb = hexToRgb(bgDark);
-        data.cell.styles.fillColor = rgb;
-        data.cell.styles.textColor = 255;
+        const rgb = hexToRgb(corMotorista(data.row.index)[0]);
+        data.cell.styles.fillColor = rgb; data.cell.styles.textColor = 255;
       } else if(data.section==='body' && data.column.index>0){
-        const i = data.row.index;
-        const d = dias[data.column.index-1].dia;
-        const v = state.marcacoes[`${i},${d}`] || "";
-        if(PDF_COR[v]){
-          data.cell.styles.fillColor = PDF_COR[v];
-          data.cell.styles.textColor = 255;
-        }
+        const v = state.marcacoes[`${data.row.index},${dias[data.column.index-1].dia}`] || "";
+        if(PDF_COR[v]){ data.cell.styles.fillColor = PDF_COR[v]; data.cell.styles.textColor = 255; }
       }
     }
   });
 
-  // Resumo financeiro
   let y = doc.lastAutoTable.finalY + 8;
   doc.setFontSize(9); doc.setTextColor(30,107,58); doc.setFont(undefined,'bold');
   doc.text("RESUMO FINANCEIRO – MOTORISTAS A PAGAR", 10, y);
@@ -1281,43 +1331,37 @@ function gerarPdfDoc(){
     didParseCell: function(data){
       const isLast = data.row.index === body2.length-1;
       if(data.section==='body' && isLast){
-        data.cell.styles.fillColor = [30,107,58];
-        data.cell.styles.textColor = 255;
-        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [30,107,58]; data.cell.styles.textColor = 255; data.cell.styles.fontStyle='bold';
       } else if(data.section==='body' && data.column.index===0){
-        const [bgDark] = corMotorista(data.row.index);
-        data.cell.styles.fillColor = hexToRgb(bgDark);
+        data.cell.styles.fillColor = hexToRgb(corMotorista(data.row.index)[0]);
         data.cell.styles.textColor = 255;
       }
     }
   });
 
   doc.setFontSize(7); doc.setTextColor(150);
-  const hoje = new Date().toLocaleDateString('pt-BR');
-  doc.text(`Gerado em ${hoje} · Ficha Diária – Controle de Ponto`,
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · Ficha Diária – Controle de Ponto`,
     doc.internal.pageSize.getWidth()-10, doc.internal.pageSize.getHeight()-6, {align:'right'});
-
   return doc;
 }
 
 function hexToRgb(hex){
   hex = hex.replace('#','');
   const num = parseInt(hex,16);
-  return [(num>>16)&255, (num>>8)&255, num&255];
+  return [(num>>16)&255,(num>>8)&255,num&255];
 }
 
 function visualizarPdf(){
   coletarFormularioParaState();
   if(!state.motoristas.some(m=>m.nome && m.nome.trim())){
-    alert("Preencha ao menos um nome de motorista.");
-    return;
+    alert("Preencha ao menos um nome de motorista."); return;
   }
   setStatus("⏳ Gerando PDF…", "#f39c12");
   try{
-    const doc = gerarPdfDoc();
+    const doc    = gerarPdfDoc();
     const blobUrl = doc.output('bloburl');
-    const body = document.getElementById('pdfPreviewBody');
-    body.innerHTML = `<iframe src="${blobUrl}" style="width:100%; height:60vh; border:1px solid #ccc; border-radius:4px;"></iframe>`;
+    document.getElementById('pdfPreviewBody').innerHTML =
+      `<iframe src="${blobUrl}" style="width:100%;height:60vh;border:1px solid #ccc;border-radius:4px;"></iframe>`;
     document.getElementById('modalPdf').classList.add('show');
     window._pdfDocAtual = doc;
     setStatus("✔ PDF pronto.", "#27ae60");
@@ -1331,29 +1375,10 @@ function visualizarPdf(){
 function salvarPdfAtual(){
   if(!window._pdfDocAtual) return;
   const mn = MESES_PT[state.mes].toUpperCase();
-  const filename = `RELATORIO_${state.quinzena}Q_${mn}_${state.ano}.pdf`;
-  window._pdfDocAtual.save(filename);
+  window._pdfDocAtual.save(`RELATORIO_${state.quinzena}Q_${mn}_${state.ano}.pdf`);
   document.getElementById('modalPdf').classList.remove('show');
   showToast("PDF salvo!");
 }
-
-/* ============================================================
-   Nova Quinzena (limpa marcações + observações, mantém motoristas)
-   ============================================================ */
-async function onNovaQuinzena(){
-  const ok = await confirmar("Nova Quinzena",
-    "Isso vai limpar todas as marcações de ponto e observações, " +
-    "mantendo os motoristas cadastrados.\n\nTem certeza? (salve o relatório antes se necessário)");
-  if(!ok) return;
-  state.marcacoes = {};
-  state.observacoes = [];
-  rebuildGrade();
-  renderObservacoes();
-  salvarSessao();
-  setStatus("✔ Pronto para nova quinzena.", "#27ae60");
-}
-
-
 
 /* ============================================================
    Renderização geral / inicialização
@@ -1365,7 +1390,12 @@ function renderTudo(){
   renderObservacoes();
 }
 
-function initTabs(){
+let _tabsInit = false;
+function initTabsEBotoes(){
+  if(_tabsInit) return;
+  _tabsInit = true;
+
+  // Tabs
   document.querySelectorAll('.tab-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
@@ -1374,7 +1404,6 @@ function initTabs(){
       document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
       window.scrollTo({top:0, behavior:'instant'});
       if(btn.dataset.tab === 'marc'){
-        // Garantir que a grade mostre o motorista 1 no topo ao entrar na aba
         setTimeout(()=>{
           document.getElementById('gradeBodyScroll').scrollTop = 0;
           document.getElementById('gradeNomesScroll').scrollTop = 0;
@@ -1382,56 +1411,28 @@ function initTabs(){
       }
     });
   });
-}
 
-function initFooterButtons(){
+  // Footer buttons
   document.getElementById('btnAddMotorista').addEventListener('click', onAddMotorista);
   document.getElementById('btnAddObs').addEventListener('click', onAddObs);
   document.getElementById('btnAtualizarGrade').addEventListener('click', ()=> setTimeout(rebuildGrade, 50));
-  document.getElementById('btnAtualizar').addEventListener('click', ()=> setTimeout(()=>{
-    rebuildGrade(); atualizarResumo();
-  }, 50));
+  document.getElementById('btnAtualizar').addEventListener('click', ()=> setTimeout(()=>{ rebuildGrade(); atualizarResumo(); }, 50));
   document.getElementById('btnNovaQuinzena').addEventListener('click', onNovaQuinzena);
   document.getElementById('btnPdf').addEventListener('click', visualizarPdf);
   document.getElementById('btnExcel').addEventListener('click', gerarExcel);
-  document.getElementById('btnSalvar').addEventListener('click', ()=>{
-    salvarSessao();
-    showToast("Dados salvos com sucesso!");
+  document.getElementById('btnSalvar').addEventListener('click', async ()=>{
+    await salvarSessao();
+    showToast("☁️ Dados salvos na nuvem!");
   });
   document.getElementById('btnFecharPdf').addEventListener('click', ()=>
     document.getElementById('modalPdf').classList.remove('show'));
   document.getElementById('btnSalvarPdf').addEventListener('click', salvarPdfAtual);
-
-
 }
 
-function avisarAntesDeFechar(e){
-  // Salva automaticamente antes de sair (best effort)
-  salvarSessao();
-  // Não exibimos confirm() nativo bloqueante para não atrapalhar o fluxo --
-  // o autosave a cada ação já garante persistência.
-}
-
-window.addEventListener('beforeunload', avisarAntesDeFechar);
-
-// ----------------------- Boot -----------------------
+// Boot
 document.addEventListener('DOMContentLoaded', ()=>{
   initAuth();
-  const tinhaSessao = carregarSessao(true);
-  if(!tinhaSessao && state.motoristas.length === 0){
-    // Primeira execução: 2 motoristas padrão, como na versão desktop
-    state.motoristas = [
-      {nome:"", horarios:["20:00","11:00"]},
-      {nome:"", horarios:["20:00","11:00"]},
-    ];
-  }
-  initTabs();
-  initFooterButtons();
-  renderTudo();
-  setStatus(tinhaSessao ? "💾 Dados anteriores restaurados." : "Preencha os dados e gere o relatório.",
-            tinhaSessao ? "#27ae60" : "#9ab8d8");
 });
-
 </script>
 </body>
 </html>
