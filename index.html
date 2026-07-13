@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ficha Diária – Controle de Ponto</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<!-- ===== Firebase SDK ===== -->
+<script type="module">
+// ============================================================
+//  CONFIGURAÇÃO DO FIREBASE
+//  Substitua os valores abaixo pelos do SEU projeto Firebase.
+//  Veja o arquivo LEIA-ME-FIREBASE.txt para instruções passo a passo.
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+         updatePassword, updateEmail, reauthenticateWithCredential,
+         EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc }
+         from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyCVOjtK5lF4uqO9iYhnknsyaE3YQ2ixi3A",
+  authDomain:        "viacao-pai-eterno.firebaseapp.com",
+  projectId:         "viacao-pai-eterno",
+  storageBucket:     "viacao-pai-eterno.firebasestorage.app",
+  messagingSenderId: "699174702324",
+  appId:             "1:699174702324:web:41ccbb9a506b82f323a2a1"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ============================================================
+//  Expor funções de nuvem para o código global (não-module)
+// ============================================================
+window._fb = {
+  // Salva os dados da quinzena na nuvem
+  salvar: async function(state){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return;
+    const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+    await setDoc(doc(db, "fichas", uid, "quinzenas", chave), state);
+  },
+
+  // Carrega todos os dados do usuário (última quinzena salva + dados de configuração)
+  carregar: async function(chave){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return null;
+    const snap = await getDoc(doc(db, "fichas", uid, "quinzenas", chave));
+    return snap.exists() ? snap.data() : null;
+  },
+
+  // Salva configuração persistente do usuário (valores padrão, nome empresa etc.)
+  salvarConfig: async function(cfg){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return;
+    await setDoc(doc(db, "fichas", uid, "config", "geral"), cfg);
+  },
+
+  carregarConfig: async function(){
+    const uid = auth.currentUser?.uid;
+    if(!uid) return null;
+    const snap = await getDoc(doc(db, "fichas", uid, "config", "geral"));
+    return snap.exists() ? snap.data() : null;
+  },
+
+  // Login com e-mail + senha (Firebase Auth)
+  login: function(email, senha){
+    return signInWithEmailAndPassword(auth, email, senha);
+  },
+
+  logout: function(){
+    return signOut(auth);
+  },
+
+  // Alterar senha
+  alterarSenha: async function(senhaAtual, novaSenha){
+    const user = auth.currentUser;
+    const cred = EmailAuthProvider.credential(user.email, senhaAtual);
+    await reauthenticateWithCredential(user, cred);
+    await updatePassword(user, novaSenha);
+  },
+
+  // Observar estado de autenticação
+  onAuth: function(callback){
+    onAuthStateChanged(auth, callback);
+  },
+
+  getEmail: function(){
+    return auth.currentUser?.email || "";
+  }
+};
+</script>
+
+<style>
+:root{
+  --azul-esc:#1a2a4a; --azul-med:#2c4a8a; --azul-cl:#4a90d9;
+  --branco:#ffffff; --bg:#f0f4f8; --card:#e8edf4;
+  --verde:#1e6b3a; --verd-cl:#27ae60; --roxo:#6c3483; --verm:#c0392b;
+  --texto:#1a2a4a; --dom-bg:#922b21;
+  --v20:#5b8fd4; --v11:#3a70b8; --ve20:#4aaa80; --ve11:#2d8a60;
+  --falta:#d9534f; --atestado:#5aaa6a;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--texto);
+}
+/* ===== Header ===== */
+header{
+  background:var(--azul-esc); color:var(--branco);
+  padding:14px 20px; text-align:center;
+}
+header h1{margin:0; font-size:1.3rem; font-weight:700;}
+header .sub{font-size:.78rem; color:#9ab8d8; margin-top:2px; display:flex;
+  align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;}
+
+/* ===== Tabs ===== */
+.tabs{display:flex; background:var(--card); border-bottom:2px solid var(--azul-med);
+  padding:0 8px; overflow-x:auto;}
+.tab-btn{
+  background:var(--card); border:none; padding:12px 18px; font-size:.92rem;
+  font-weight:700; color:var(--azul-esc); cursor:pointer; white-space:nowrap;
+  border-radius:8px 8px 0 0; margin-top:6px;
+}
+.tab-btn.active{background:var(--azul-med); color:#fff;}
+.tab-content{display:none; padding:16px; max-width:1200px; margin:0 auto;}
+.tab-content.active{display:block;}
+
+/* ===== Cards ===== */
+.card{
+  background:var(--bg); border:1px solid #c8d4e3; border-radius:8px;
+  padding:14px 18px; margin-bottom:14px;
+}
+.card h3{margin:0 0 10px; color:var(--azul-med); font-size:1rem;}
+.row{display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;}
+.row label{min-width:170px; font-size:.92rem;}
+input[type=text], input[type=number], input[type=email], select{
+  font-family:inherit; font-size:.92rem; padding:6px 8px;
+  border:1px solid #b8c4d3; border-radius:5px; background:#fff;
+}
+.radio-group label{min-width:auto; display:flex; align-items:center; gap:4px; font-weight:400;}
+
+/* ===== Legenda ===== */
+.legenda{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;}
+.legenda .item{display:flex; flex-direction:column; align-items:center; font-size:.72rem;}
+.legenda .chip{
+  width:54px; padding:5px 0; border-radius:5px; font-weight:700; color:#fff;
+  text-align:center; margin-bottom:3px;
+}
+
+/* ===== Botões genéricos ===== */
+button{cursor:pointer; font-family:inherit;}
+.btn{
+  border:none; border-radius:6px; padding:9px 16px; font-weight:700;
+  font-size:.88rem; color:#fff;
+}
+.btn-green{background:var(--verd-cl);}
+.btn-green:hover{background:#229954;}
+.btn-blue{background:var(--azul-med);}
+.btn-blue:hover{background:#1f3a6e;}
+.btn-red{background:var(--verm);}
+.btn-red:hover{background:#a93226;}
+.btn-purple{background:var(--roxo);}
+.btn-purple:hover{background:#5a2a6e;}
+.btn-orange{background:#884400;}
+.btn-orange:hover{background:#6e3700;}
+.btn-darkgreen{background:#1a6b3a;}
+.btn-darkgreen:hover{background:#155c30;}
+.btn-sm{padding:4px 10px; font-size:.78rem; border-radius:4px;}
+
+/* ===== Motoristas ===== */
+#listaMotoristas{display:flex; flex-direction:column; gap:10px;}
+.motorista-card{border-radius:8px; overflow:hidden; border:1px solid #c8d4e3;}
+.motorista-hdr{padding:8px 12px; display:flex; justify-content:space-between; align-items:center; color:#fff;}
+.motorista-hdr span{font-weight:700; font-size:.92rem;}
+.motorista-body{padding:10px 14px;}
+.motorista-body .row label{min-width:80px;}
+.horario-chip{
+  display:inline-block; padding:4px 10px; border-radius:5px; color:#fff;
+  font-size:.8rem; font-weight:700; margin-right:6px;
+}
+.obs-hint{color:#888; font-size:.78rem; font-style:italic;}
+
+/* ===== Grade de Marcações ===== */
+.grade-toolbar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
+.grade-wrapper{
+  display:grid; grid-template-columns:170px 1fr; grid-template-rows:auto 1fr;
+  border:1px solid #c8d4e3; border-radius:6px; overflow:hidden;
+  max-height:65vh;
+}
+.grade-corner{
+  grid-column:1; grid-row:1; background:var(--azul-esc); color:#fff;
+  display:flex; align-items:center; padding:0 10px; font-weight:700; font-size:.85rem;
+  position:sticky; top:0; left:0; z-index:3;
+}
+.grade-hdr-scroll{
+  grid-column:2; grid-row:1; overflow-x:auto; overflow-y:hidden;
+  background:var(--azul-esc); position:sticky; top:0; z-index:2;
+}
+.grade-hdr-inner{display:flex;}
+.grade-hdr-cell{
+  min-width:58px; width:58px; color:#fff; text-align:center; font-size:.74rem;
+  font-weight:700; padding:6px 0; border-left:1px solid rgba(255,255,255,.15);
+}
+.grade-hdr-cell.dom{background:var(--dom-bg);}
+.grade-hdr-cell:not(.dom){background:var(--azul-med);}
+
+.grade-nomes-scroll{
+  grid-column:1; grid-row:2; overflow-y:auto; overflow-x:hidden;
+  position:sticky; left:0; z-index:1;
+}
+.grade-nomes-scroll::-webkit-scrollbar{display:none;}
+.nome-cell{
+  height:46px; display:flex; align-items:center; padding:0 10px; color:#fff;
+  font-weight:700; font-size:.84rem; border-bottom:1px solid rgba(255,255,255,.15);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+.grade-body-scroll{grid-column:2; grid-row:2; overflow:auto;}
+.grade-body-inner{display:flex; flex-direction:column;}
+.grade-row{display:flex;}
+.cel-marc{
+  min-width:58px; width:58px; height:46px; border:1px solid #dfe6ee;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  font-size:.72rem; font-weight:700; line-height:1.15; white-space:pre-line;
+  background:var(--card); color:var(--texto); user-select:none;
+}
+.cel-marc:hover{filter:brightness(0.95); outline:2px solid var(--azul-cl); outline-offset:-2px;}
+
+/* ===== Resumo ===== */
+#resumoWrap{background:#0d1b2e; border-radius:8px; padding:12px; margin-top:14px;}
+#resumoWrap h3{color:#fff; margin:0 0 8px; font-size:.92rem;}
+#resumoWrap .hint{color:#7f8c8d; font-size:.76rem; font-weight:400;}
+table.resumo{width:100%; border-collapse:collapse; font-size:.8rem; color:#fff;}
+table.resumo th, table.resumo td{padding:6px 8px; text-align:center; white-space:nowrap;}
+table.resumo th{background:var(--azul-esc); font-size:.74rem;}
+table.resumo tr:nth-child(even) td{background:#243a5e;}
+table.resumo tr:nth-child(odd) td{background:#1a2a4a;}
+table.resumo td.nome{text-align:left;}
+.scroll-x{overflow-x:auto;}
+#totalGeral{
+  background:var(--verde); color:#fff; text-align:center; font-weight:700;
+  padding:10px; border-radius:6px; margin-top:8px; font-size:1.05rem;
+}
+
+/* ===== Footer / ações ===== */
+footer{
+  background:var(--azul-esc); padding:12px 16px; display:flex; align-items:center;
+  gap:8px; flex-wrap:wrap; position:sticky; bottom:0;
+}
+#statusMsg{color:#9ab8d8; font-size:.85rem; flex:1; min-width:140px;}
+#ultimoSave{color:#2ecc71; font-size:.76rem; font-weight:700;}
+
+/* ===== Observações ===== */
+.obs-entry{
+  border:1px solid #c8d4e3; border-radius:6px; padding:8px 10px; margin-bottom:8px;
+}
+.obs-entry:nth-child(even){background:#eaf0f8;}
+.obs-entry:nth-child(odd){background:#f5f8fc;}
+.obs-row{display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;}
+.obs-row label{min-width:90px; font-weight:700; font-size:.85rem;}
+.obs-row select, .obs-row input[type=text]{flex:1; min-width:160px;}
+.empty-msg{text-align:center; color:#aaa; font-style:italic; padding:30px 0;}
+
+/* ===== Modal ===== */
+.modal-overlay{
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);
+  align-items:center; justify-content:center; z-index:100;
+}
+.modal-overlay.show{display:flex;}
+.modal-box{
+  background:#fff; border-radius:8px; max-width:480px; width:90%;
+  max-height:85vh; overflow-y:auto;
+}
+.modal-hdr{background:var(--azul-esc); color:#fff; padding:14px 18px; border-radius:8px 8px 0 0;}
+.modal-hdr h3{margin:0; font-size:1.05rem;}
+.modal-body{padding:16px 18px;}
+.modal-ft{padding:12px 18px; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid #eee;}
+.modal-body p{margin:0 0 12px; font-size:.9rem; line-height:1.5;}
+
+/* ===== Toast ===== */
+#toast{
+  position:fixed; bottom:70px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:#1a2a4a; color:#fff; padding:10px 18px; border-radius:6px;
+  font-size:.85rem; opacity:0; pointer-events:none; transition:.25s; z-index:200;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+/* ===== Scrollbar custom ===== */
+::-webkit-scrollbar{height:10px; width:10px;}
+::-webkit-scrollbar-track{background:#e4e9f0;}
+::-webkit-scrollbar-thumb{background:#9fb0c8; border-radius:5px;}
+::-webkit-scrollbar-thumb:hover{background:#7e92ad;}
+
+@media (max-width:640px){
+  .row label{min-width:120px;}
+  header h1{font-size:1.05rem;}
+}
+
+/* ===== Tela de Login ===== */
+#loginOverlay{
+  position:fixed; inset:0; background:var(--azul-esc);
+  display:flex; align-items:center; justify-content:center;
+  z-index:9999; flex-direction:column;
+}
+#loginOverlay.hidden{display:none;}
+.login-box{
+  background:#fff; border-radius:12px; padding:40px 36px;
+  width:100%; max-width:380px; box-shadow:0 8px 32px rgba(0,0,0,.35);
+  text-align:center;
+}
+.login-logo{font-size:2.8rem; margin-bottom:8px;}
+.login-titulo{font-size:1.2rem; font-weight:700; color:var(--azul-esc); margin:0 0 4px;}
+.login-sub{font-size:.82rem; color:#888; margin:0 0 28px;}
+.login-campo{
+  width:100%; padding:12px 14px; border:1.5px solid #c8d4e3;
+  border-radius:7px; font-size:1rem; font-family:inherit;
+  margin-bottom:14px; transition:border .2s;
+}
+.login-campo:focus{outline:none; border-color:var(--azul-cl);}
+.login-erro{
+  color:var(--verm); font-size:.83rem; margin:-6px 0 10px;
+  display:none; text-align:left;
+}
+.login-erro.show{display:block;}
+.btn-login{
+  width:100%; padding:13px; background:var(--azul-med); color:#fff;
+  border:none; border-radius:7px; font-size:1rem; font-weight:700;
+  cursor:pointer; transition:background .2s;
+}
+.btn-login:hover{background:#1f3a6e;}
+.login-footer{margin-top:18px; font-size:.75rem; color:#bbb;}
+.login-nuvem{
+  display:inline-block; background:#e8f5e9; color:#1e6b3a; border-radius:5px;
+  font-size:.74rem; padding:4px 10px; margin-bottom:18px; font-weight:700;
+}
+
+/* ===== Loading overlay ===== */
+#loadingOverlay{
+  position:fixed; inset:0; background:rgba(26,42,74,.82);
+  display:flex; align-items:center; justify-content:center;
+  z-index:10000; flex-direction:column; gap:16px;
+}
+#loadingOverlay.hidden{display:none;}
+.spinner{
+  width:44px; height:44px; border:5px solid rgba(255,255,255,.25);
+  border-top-color:#4a90d9; border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+#loadingMsg{color:#fff; font-size:1rem; font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- ===== Loading overlay ===== -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingMsg">Conectando à nuvem…</div>
+</div>
+
+<!-- ===== Tela de Login (Firebase Auth) ===== -->
+<div id="loginOverlay" class="hidden">
+  <div class="login-box">
+    <div class="login-logo">🚌</div>
+    <p class="login-titulo">Ficha Diária – Controle de Ponto</p>
+    <p class="login-sub">Viação Pai Eterno · Acesso restrito</p>
+    <div class="login-nuvem">☁️ Dados salvos na nuvem</div>
+    <input class="login-campo" type="email" id="loginEmail"
+           placeholder="E-mail" autocomplete="username">
+    <input class="login-campo" type="password" id="loginSenha"
+           placeholder="Senha" autocomplete="current-password">
+    <div class="login-erro" id="loginErro">E-mail ou senha incorretos.</div>
+    <button class="btn-login" id="btnEntrar">Entrar</button>
+    <div class="login-footer">Viação Pai Eterno © 2026</div>
+  </div>
+</div>
+
+<!-- ===== Modal Alterar Senha ===== -->
+<div class="modal-overlay" id="modalSenha">
+  <div class="modal-box">
+    <div class="modal-hdr"><h3>🔐 Alterar Senha</h3></div>
+    <div class="modal-body">
+      <p style="color:#888;font-size:.82rem;">E-mail: <b id="emailAtualLabel"></b></p>
+      <div class="row"><label>Senha atual:</label>
+        <input type="password" id="senhaAtual" style="width:200px;"></div>
+      <div class="row"><label>Nova senha:</label>
+        <input type="password" id="novaSenha" style="width:200px;"></div>
+      <div class="row"><label>Confirmar:</label>
+        <input type="password" id="confirmarSenha" style="width:200px;"></div>
+      <p id="senhaErro" style="color:var(--verm);font-size:.85rem;display:none;"></p>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-red btn-sm" id="btnFecharSenha">Cancelar</button>
+      <button class="btn btn-darkgreen btn-sm" id="btnSalvarSenha">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <h1>🚌 FICHA DIÁRIA – CONTROLE DE PONTO</h1>
+  <div class="sub">
+    <span>Viagem Normal · Viagem Extra · Faltas · Atestados · Excel · PDF</span>
+    <span id="emailLogado" style="color:#7fbfff;font-size:.74rem;"></span>
+    <button id="btnAlterarSenha" style="background:none;border:none;color:#9ab8d8;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;">🔐 Alterar Senha</button>
+    &nbsp;·&nbsp;
+    <button id="btnSair" style="background:none;border:none;color:#9ab8d8;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;">🚪 Sair</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="cfg">📅 Período &amp; Valores</button>
+  <button class="tab-btn" data-tab="mot">👤 Motoristas &amp; Horários</button>
+  <button class="tab-btn" data-tab="marc">✅ Marcações de Ponto</button>
+  <button class="tab-btn" data-tab="obs">📝 Observações</button>
+  <button class="tab-btn" data-tab="adi">💸 Adiantamentos</button>
+</div>
+
+<!-- ===================== ABA 1 - Período & Valores ===================== -->
+<div class="tab-content active" id="tab-cfg">
+  <div class="card">
+    <h3>📅 Período</h3>
+    <div class="row">
+      <label>Ano:</label>
+      <input type="number" id="inAno" min="2000" max="2100" style="width:90px;">
+      <label style="min-width:60px;">Mês:</label>
+      <select id="inMes"></select>
+    </div>
+    <div class="row radio-group">
+      <label>Quinzena:</label>
+      <label><input type="radio" name="quinz" value="1"> 1ª quinzena (dias 1–15)</label>
+      <label><input type="radio" name="quinz" value="2" checked> 2ª quinzena (dias 16–fim)</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>💰 Valores</h3>
+    <div class="row">
+      <label>Valor por viagem (R$):</label>
+      <input type="number" id="inValorViagem" value="350" style="width:110px;">
+    </div>
+    <div class="row">
+      <label>Bonificação por motorista (R$):</label>
+      <input type="number" id="inBonificacao" value="750" style="width:110px;">
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🎨 Legenda de Marcações</h3>
+    <div class="legenda">
+      <div class="item"><div class="chip" style="background:var(--v20)">V 20:00</div>Viagem Normal 20h</div>
+      <div class="item"><div class="chip" style="background:var(--v11)">V 11:00</div>Viagem Normal 11h</div>
+      <div class="item"><div class="chip" style="background:var(--ve20)">VE 20:00</div>Viagem Extra 20h</div>
+      <div class="item"><div class="chip" style="background:var(--ve11)">VE 11:00</div>Viagem Extra 11h</div>
+      <div class="item"><div class="chip" style="background:var(--falta)">F</div>Falta</div>
+      <div class="item"><div class="chip" style="background:var(--atestado)">A</div>Atestado</div>
+      <div class="item"><div class="chip" style="background:var(--card); color:var(--texto)">·</div>Sem marcação</div>
+    </div>
+    <p class="obs-hint" style="margin-top:8px;">ℹ Clique na célula do dia para alternar: · → V20:00 → V11:00 → VE20:00 → VE11:00 → F → A → ·</p>
+  </div>
+</div>
+
+<!-- ===================== ABA 2 - Motoristas & Horários ===================== -->
+<div class="tab-content" id="tab-mot">
+  <div class="row" style="margin-bottom:10px;">
+    <button class="btn btn-green" id="btnAddMotorista">➕ Adicionar Motorista</button>
+    <span class="obs-hint">Adicione motoristas. Horários fixos: 20:00 e 11:00.</span>
+  </div>
+  <div id="listaMotoristas"></div>
+</div>
+
+<!-- ===================== ABA 3 - Marcações de Ponto ===================== -->
+<div class="tab-content" id="tab-marc">
+  <div class="grade-toolbar">
+    <button class="btn btn-blue btn-sm" id="btnAtualizarGrade">🔄 Atualizar grade</button>
+    <span class="obs-hint">Clique para ciclar: · → V20:00 → V11:00 → VE20:00 → VE11:00 → F → A → ·</span>
+  </div>
+  <div class="grade-wrapper">
+    <div class="grade-corner">Motorista</div>
+    <div class="grade-hdr-scroll" id="gradeHdrScroll"><div class="grade-hdr-inner" id="gradeHdrInner"></div></div>
+    <div class="grade-nomes-scroll" id="gradeNomesScroll"></div>
+    <div class="grade-body-scroll" id="gradeBodyScroll"><div class="grade-body-inner" id="gradeBodyInner"></div></div>
+  </div>
+
+  <div id="resumoWrap">
+    <h3>📊 RESUMO DOS TOTAIS <span class="hint">(atualiza automaticamente)</span></h3>
+    <div class="scroll-x">
+      <table class="resumo" id="tabelaResumo">
+        <thead><tr>
+          <th>Motorista</th><th>Horários</th><th>V.Norm</th><th>V.Extra</th>
+          <th>Faltas</th><th>Atest.</th><th>Vlr.Normal</th><th>Vlr.Extra</th>
+          <th>Bonif.</th><th>TOTAL BRUTO</th><th>Adiantamento</th><th>LÍQUIDO A PAGAR</th>
+        </tr></thead>
+        <tbody id="resumoBody"></tbody>
+      </table>
+    </div>
+    <div id="totalGeral">TOTAL GERAL: R$ 0,00</div>
+  </div>
+</div>
+
+<!-- ===================== ABA 4 - Observações ===================== -->
+<div class="tab-content" id="tab-obs">
+  <div class="row" style="margin-bottom:10px;">
+    <button class="btn btn-green" id="btnAddObs">➕ Adicionar Observação</button>
+    <span class="obs-hint">Selecione o motorista e escreva a observação</span>
+  </div>
+  <div id="listaObs"></div>
+</div>
+
+<!-- ===================== ABA 5 - Adiantamentos ===================== -->
+<div class="tab-content" id="tab-adi">
+  <div class="card">
+    <h3>💸 Adiantamentos da Quinzena</h3>
+    <p style="color:#666;font-size:.88rem;margin:0 0 12px;">
+      O valor inserido será descontado automaticamente do total a pagar de cada motorista no relatório.
+      Os adiantamentos zeram a cada quinzena.
+    </p>
+    <div class="row" style="margin-bottom:10px;">
+      <button class="btn btn-green" id="btnAddAdi">➕ Adicionar Adiantamento</button>
+    </div>
+    <div id="listaAdiantamentos"></div>
+  </div>
+
+
+</div>
+
+<footer>
+  <button class="btn btn-orange btn-sm" id="btnNovaQuinzena">🗑 Nova Quinzena</button>
+  <button class="btn btn-blue btn-sm" id="btnAtualizar">🔄 Atualizar</button>
+  <button class="btn btn-purple" id="btnPdf">📄 VISUALIZAR PDF</button>
+  <button class="btn btn-green" id="btnExcel">📊 GERAR EXCEL</button>
+  <button class="btn btn-darkgreen" id="btnSalvar">💾 SALVAR NA NUVEM</button>
+  <span id="ultimoSave"></span>
+  <span id="statusMsg">Preencha os dados e gere o relatório.</span>
+</footer>
+
+<!-- ===== Modal Confirmação genérica ===== -->
+<div class="modal-overlay" id="modalConfirm">
+  <div class="modal-box">
+    <div class="modal-hdr"><h3 id="confirmTitulo">Confirmar</h3></div>
+    <div class="modal-body"><p id="confirmTexto"></p></div>
+    <div class="modal-ft">
+      <button class="btn btn-blue btn-sm" id="confirmCancelar">Cancelar</button>
+      <button class="btn btn-red btn-sm" id="confirmOk">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal Preview PDF ===== -->
+<div class="modal-overlay" id="modalPdf">
+  <div class="modal-box" style="max-width:900px;">
+    <div class="modal-hdr"><h3>📄 Visualização do Relatório</h3></div>
+    <div class="modal-body" id="pdfPreviewBody" style="max-height:60vh;"></div>
+    <div class="modal-ft">
+      <button class="btn btn-red btn-sm" id="btnFecharPdf">Fechar</button>
+      <button class="btn btn-purple" id="btnSalvarPdf">💾 Salvar PDF</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   Ficha Diária – Controle de Ponto (versão Web + Firebase)
+   Dados salvos no Firestore. Auth via Firebase Authentication.
+   ============================================================ */
+
+// ----------------------- Constantes -----------------------
+const ABREV_CURTA = ["D","S","T","Q","Q","S","S"];
+const MESES_PT = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+const PALETA_MOTOR = [
+  ["#4a6fa5","#dce8f5"], ["#3d7a5e","#d5ede5"],
+  ["#7a6030","#f5ecd5"], ["#5a4a7a","#e8e0f5"],
+  ["#6a3a3a","#f5dede"], ["#3a6a6a","#d5eded"],
+  ["#5a6a3a","#e5edda"], ["#7a4a60","#f5dde8"],
+  ["#3a5a7a","#d5e5f5"], ["#6a5a3a","#f0e8d5"],
+  ["#4a7a6a","#d5ede8"], ["#7a5a4a","#f0e5de"],
+];
+
+const CICLO_CELULA = ["", "V20", "V11", "VE20", "VE11", "F", "A"];
+const LABEL_CELULA = {
+  "": "·", "V20":"V\n20:00", "V11":"V\n11:00",
+  "VE20":"VE\n20:00", "VE11":"VE\n11:00", "F":"F", "A":"A"
+};
+const COR_CELULA_BG = {
+  "":"#e8edf4", "V20":"#5b8fd4", "V11":"#3a70b8",
+  "VE20":"#4aaa80", "VE11":"#2d8a60", "F":"#d9534f", "A":"#5aaa6a"
+};
+const COR_CELULA_FG = {};
+CICLO_CELULA.forEach(k => COR_CELULA_FG[k] = (k==="" ? "#1a2a4a" : "#ffffff"));
+
+// ----------------------- Estado global -----------------------
+let state = {
+  ano: new Date().getFullYear(),
+  mes: new Date().getMonth()+1,
+  quinzena: 2,
+  valorViagem: 350,
+  bonificacao: 750,
+  motoristas: [],
+  marcacoes: {},
+  observacoes: [],
+  adiantamentos: [],
+};
+
+let bloquearToggle = false;
+let _appPronto = false; // true após login e carregamento
+
+// ----------------------- Loading overlay -----------------------
+function mostrarLoading(msg){
+  document.getElementById('loadingMsg').textContent = msg || "Aguarde…";
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+function ocultarLoading(){
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// ----------------------- Persistência na nuvem (Firebase) -----------------------
+async function salvarSessao(){
+  if(!_appPronto) return;
+  try{
+    coletarFormularioParaState();
+    await window._fb.salvar(state);
+    const hora = new Date().toLocaleTimeString('pt-BR');
+    const lbl = document.getElementById('ultimoSave');
+    if(lbl){ lbl.textContent = `☁️ Salvo às ${hora}`; lbl.style.color = "#2ecc71"; }
+  }catch(e){
+    const lbl = document.getElementById('ultimoSave');
+    if(lbl){ lbl.textContent = "⚠ Erro ao salvar!"; lbl.style.color = "#e74c3c"; }
+    console.error("Erro ao salvar na nuvem:", e);
+  }
+}
+
+async function carregarSessao(){
+  try{
+    coletarFormularioParaState();
+    const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+    mostrarLoading("Carregando dados da nuvem…");
+    const dados = await window._fb.carregar(chave);
+    ocultarLoading();
+    if(!dados) return false;
+    state.ano           = dados.ano           || state.ano;
+    state.mes           = dados.mes           || state.mes;
+    state.quinzena      = dados.quinzena      || state.quinzena;
+    state.valorViagem   = dados.valorViagem   ?? 350;
+    state.bonificacao   = dados.bonificacao   ?? 750;
+    state.motoristas    = Array.isArray(dados.motoristas)  ? dados.motoristas  : [];
+    state.marcacoes     = (dados.marcacoes && typeof dados.marcacoes==='object') ? dados.marcacoes : {};
+    state.observacoes   = Array.isArray(dados.observacoes) ? dados.observacoes : [];
+    state.adiantamentos = Array.isArray(dados.adiantamentos) ? dados.adiantamentos : [];
+    return true;
+  }catch(e){
+    ocultarLoading();
+    console.error("Erro ao carregar da nuvem:", e);
+    return false;
+  }
+}
+
+// Quando muda mês/quinzena, busca aquele período da nuvem
+async function carregarPeriodo(){
+  mostrarLoading("Buscando dados da quinzena…");
+  coletarFormularioParaState();
+  const chave = `${state.ano}_${state.mes}_${state.quinzena}`;
+  try{
+    const dados = await window._fb.carregar(chave);
+    ocultarLoading();
+    if(dados){
+      state.motoristas  = Array.isArray(dados.motoristas)  ? dados.motoristas  : state.motoristas;
+      state.marcacoes   = (dados.marcacoes && typeof dados.marcacoes==='object') ? dados.marcacoes : {};
+      state.observacoes  = Array.isArray(dados.observacoes) ? dados.observacoes : [];
+      state.adiantamentos = Array.isArray(dados.adiantamentos) ? dados.adiantamentos : [];
+      showToast("☁️ Período carregado da nuvem.");
+    } else {
+      // Período novo: mantém motoristas mas limpa marcações
+      state.marcacoes   = {};
+      state.observacoes = [];
+      showToast("Novo período — sem dados anteriores.");
+    }
+  }catch(e){
+    ocultarLoading();
+    console.error(e);
+  }
+  renderTudo();
+}
+
+// ----------------------- Auth Firebase -----------------------
+function initAuth(){
+  const overlay    = document.getElementById('loginOverlay');
+  const loadingEl  = document.getElementById('loadingOverlay');
+
+  // Aguarda Firebase dizer se há sessão ativa
+  // _fb pode demorar um momento para estar disponível (módulo ES)
+  const esperarFb = setInterval(()=>{
+    if(!window._fb) return;
+    clearInterval(esperarFb);
+
+    window._fb.onAuth(async (user) => {
+      if(user){
+        // Usuário autenticado
+        overlay.classList.add('hidden');
+        document.getElementById('emailLogado').textContent = user.email;
+        mostrarLoading("Carregando dados da nuvem…");
+
+        // Carrega dados iniciais
+        const tinhaDados = await carregarSessao();
+        if(!tinhaDados && state.motoristas.length === 0){
+          state.motoristas = [
+            {nome:"", horarios:["20:00","11:00"]},
+            {nome:"", horarios:["20:00","11:00"]},
+          ];
+        }
+        _appPronto = true;
+        ocultarLoading();
+        initTabsEBotoes();
+        renderTudo();
+        setStatus(tinhaDados ? "☁️ Dados restaurados da nuvem." : "Preencha os dados e gere o relatório.",
+                  tinhaDados ? "#27ae60" : "#9ab8d8");
+      } else {
+        // Não autenticado — mostra login
+        _appPronto = false;
+        overlay.classList.remove('hidden');
+        ocultarLoading();
+      }
+    });
+  }, 100);
+
+  // Botão entrar
+  document.getElementById('btnEntrar').addEventListener('click', tentarLogin);
+  ['loginEmail','loginSenha'].forEach(id=>{
+    document.getElementById(id).addEventListener('keydown', e=>{
+      if(e.key==='Enter') tentarLogin();
+    });
+  });
+
+  // Sair
+  document.getElementById('btnSair').addEventListener('click', async ()=>{
+    await window._fb.logout();
+    // onAuth() dispara automaticamente e mostra login
+  });
+
+  // Alterar senha
+  document.getElementById('btnAlterarSenha').addEventListener('click', ()=>{
+    document.getElementById('emailAtualLabel').textContent = window._fb.getEmail();
+    ['senhaAtual','novaSenha','confirmarSenha'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('senhaErro').style.display='none';
+    document.getElementById('modalSenha').classList.add('show');
+  });
+  document.getElementById('btnFecharSenha').addEventListener('click', ()=>
+    document.getElementById('modalSenha').classList.remove('show'));
+  document.getElementById('btnSalvarSenha').addEventListener('click', alterarSenha);
+}
+
+async function tentarLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const senha  = document.getElementById('loginSenha').value;
+  const erroEl = document.getElementById('loginErro');
+  erroEl.classList.remove('show');
+
+  if(!email || !senha){
+    erroEl.textContent = 'Preencha e-mail e senha.';
+    erroEl.classList.add('show');
+    return;
+  }
+
+  document.getElementById('btnEntrar').disabled = true;
+  document.getElementById('btnEntrar').textContent = 'Entrando…';
+  try{
+    await window._fb.login(email, senha);
+    // onAuth() cuida do resto
+  }catch(err){
+    erroEl.textContent = traduzirErroFirebase(err.code);
+    erroEl.classList.add('show');
+    document.getElementById('loginSenha').value = '';
+  }finally{
+    document.getElementById('btnEntrar').disabled = false;
+    document.getElementById('btnEntrar').textContent = 'Entrar';
+  }
+}
+
+async function alterarSenha(){
+  const senhaAtualVal  = document.getElementById('senhaAtual').value;
+  const novaSenhaVal   = document.getElementById('novaSenha').value;
+  const confirmarVal   = document.getElementById('confirmarSenha').value;
+  const erroEl         = document.getElementById('senhaErro');
+  erroEl.style.display = 'none';
+
+  if(!senhaAtualVal || !novaSenhaVal || !confirmarVal){
+    erroEl.textContent = 'Preencha todos os campos.'; erroEl.style.display='block'; return;
+  }
+  if(novaSenhaVal !== confirmarVal){
+    erroEl.textContent = 'Nova senha e confirmação não conferem.'; erroEl.style.display='block'; return;
+  }
+  if(novaSenhaVal.length < 6){
+    erroEl.textContent = 'A nova senha deve ter pelo menos 6 caracteres.'; erroEl.style.display='block'; return;
+  }
+  try{
+    await window._fb.alterarSenha(senhaAtualVal, novaSenhaVal);
+    document.getElementById('modalSenha').classList.remove('show');
+    showToast('✔ Senha alterada com sucesso!');
+  }catch(err){
+    erroEl.textContent = traduzirErroFirebase(err.code);
+    erroEl.style.display = 'block';
+  }
+}
+
+function traduzirErroFirebase(code){
+  const map = {
+    'auth/invalid-email':          'E-mail inválido.',
+    'auth/user-not-found':         'Usuário não encontrado.',
+    'auth/wrong-password':         'Senha incorreta.',
+    'auth/invalid-credential':     'E-mail ou senha incorretos.',
+    'auth/too-many-requests':      'Muitas tentativas. Tente novamente mais tarde.',
+    'auth/network-request-failed': 'Sem conexão com a internet.',
+    'auth/weak-password':          'Senha muito fraca (mínimo 6 caracteres).',
+  };
+  return map[code] || `Erro: ${code}`;
+}
+
+// ----------------------- Utilidades de data -----------------------
+function diasNaQuinzena(ano, mes, quinz){
+  const ultimoDiaMes = new Date(ano, mes, 0).getDate();
+  const inicio = quinz === 1 ? 1 : 16;
+  const fim    = quinz === 1 ? 15 : ultimoDiaMes;
+  const dias = [];
+  for(let d=inicio; d<=fim; d++){
+    const dow = new Date(ano, mes-1, d).getDay();
+    dias.push({dia:d, sem:ABREV_CURTA[dow], dom: dow===0});
+  }
+  return dias;
+}
+
+function nomeMotorista(i){
+  const m = state.motoristas[i];
+  return (m && m.nome && m.nome.trim()) ? m.nome.trim() : `Motorista ${i+1}`;
+}
+function corMotorista(i){ return PALETA_MOTOR[i % PALETA_MOTOR.length]; }
+function fmtMoeda(v){ return "R$ " + (v||0).toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+
+// ----------------------- Toast -----------------------
+let toastTimer = null;
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove('show'), 2600);
+}
+function setStatus(msg, cor){
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.style.color = cor || "#9ab8d8";
+}
+
+// ----------------------- Modal confirmação genérico -----------------------
+function confirmar(titulo, texto){
+  return new Promise(resolve=>{
+    const overlay = document.getElementById('modalConfirm');
+    document.getElementById('confirmTitulo').textContent = titulo;
+    document.getElementById('confirmTexto').textContent  = texto;
+    overlay.classList.add('show');
+    const okBtn     = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancelar');
+    function cleanup(result){
+      overlay.classList.remove('show');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onOk()    { cleanup(true);  }
+    function onCancel(){ cleanup(false); }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+// ----------------------- Coleta formulário → state -----------------------
+function coletarFormularioParaState(){
+  state.ano        = parseInt(document.getElementById('inAno').value)         || state.ano;
+  state.mes        = parseInt(document.getElementById('inMes').value)         || state.mes;
+  const qEl        = document.querySelector('input[name=quinz]:checked');
+  state.quinzena   = qEl ? parseInt(qEl.value) : state.quinzena;
+  state.valorViagem = parseFloat(document.getElementById('inValorViagem').value) || 0;
+  state.bonificacao = parseFloat(document.getElementById('inBonificacao').value) || 0;
+}
+
+/* ============================================================
+   Cálculo de totais
+   ============================================================ */
+function calcularTotais(){
+  const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena).map(d=>d.dia);
+  return state.motoristas.map((m,i)=>{
+    let vn=0, ve=0, fa=0, at=0;
+    dias.forEach(d=>{
+      const v = state.marcacoes[`${i},${d}`] || "";
+      if(v==="V20"||v==="V11") vn++;
+      else if(v==="VE20"||v==="VE11") ve++;
+      else if(v==="F") fa++;
+      else if(v==="A") at++;
+    });
+    const valNormal = vn * state.valorViagem;
+    const valExtra  = ve * state.valorViagem;
+    const total     = valNormal + valExtra + state.bonificacao;
+    return {
+      nome: nomeMotorista(i),
+      horarios: ["20:00","11:00"],
+      viagensNormal: vn, viagensExtra: ve, faltas: fa, atestados: at,
+      valNormal, valExtra, bonificacao: state.bonificacao, total
+    };
+  });
+}
+
+/* ============================================================
+   ABA 1 — Período & Valores
+   ============================================================ */
+function initTabCfg(){
+  const selMes = document.getElementById('inMes');
+  selMes.innerHTML = MESES_PT.slice(1).map((m,idx)=>
+    `<option value="${idx+1}">${m}</option>`).join('');
+  document.getElementById('inAno').value = state.ano;
+  selMes.value = state.mes;
+  document.querySelector(`input[name=quinz][value="${state.quinzena}"]`).checked = true;
+  document.getElementById('inValorViagem').value = state.valorViagem;
+  document.getElementById('inBonificacao').value = state.bonificacao;
+
+  document.getElementById('inAno').addEventListener('change', onPeriodoChange);
+  selMes.addEventListener('change', onPeriodoChange);
+  document.querySelectorAll('input[name=quinz]').forEach(r=>
+    r.addEventListener('change', onPeriodoChange));
+  document.getElementById('inValorViagem').addEventListener('input', debounce(onValoresChange, 500));
+  document.getElementById('inBonificacao').addEventListener('input',  debounce(onValoresChange, 500));
+}
+
+function onPeriodoChange(){
+  // Ao trocar mês/quinzena, busca aquela quinzena na nuvem
+  carregarPeriodo();
+}
+function onValoresChange(){
+  coletarFormularioParaState();
+  atualizarResumo();
+  salvarSessao();
+}
+function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
+
+/* ============================================================
+   ABA 2 — Motoristas & Horários
+   ============================================================ */
+function renderMotoristas(){
+  const wrap = document.getElementById('listaMotoristas');
+  wrap.innerHTML = "";
+  state.motoristas.forEach((m,i)=>{
+    const [bgDark,bgLight] = corMotorista(i);
+    const card = document.createElement('div');
+    card.className = "motorista-card";
+    card.innerHTML = `
+      <div class="motorista-hdr" style="background:${bgDark}">
+        <span>Motorista ${i+1}</span>
+        <button class="btn btn-red btn-sm" data-action="rem-mot" data-idx="${i}">✖ Remover</button>
+      </div>
+      <div class="motorista-body" style="background:${bgLight}">
+        <div class="row">
+          <label>Nome:</label>
+          <input type="text" data-action="nome-mot" data-idx="${i}" value="${escapeHtml(m.nome||'')}" style="width:280px;">
+        </div>
+        <div class="row">
+          <label>Horários:</label>
+          <span class="horario-chip" style="background:${bgDark}">20:00</span>
+          <span class="horario-chip" style="background:${bgDark}">11:00</span>
+          <span class="obs-hint">(Viagem Normal · Viagem Extra)</span>
+        </div>
+      </div>`;
+    wrap.appendChild(card);
+  });
+  wrap.querySelectorAll('[data-action="rem-mot"]').forEach(btn=>
+    btn.addEventListener('click', onRemoverMotorista));
+  wrap.querySelectorAll('[data-action="nome-mot"]').forEach(inp=>{
+    inp.addEventListener('input', debounce(onNomeMotoristaChange, 600));
+    inp.addEventListener('blur',  onNomeMotoristaBlur);
+  });
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function onAddMotorista(){
+  state.motoristas.push({nome:"", horarios:["20:00","11:00"]});
+  renderMotoristas();
+  rebuildObsSelects();
+  salvarSessao();
+}
+
+async function onRemoverMotorista(e){
+  if(state.motoristas.length <= 1){
+    alert("Deve haver pelo menos 1 motorista.");
+    return;
+  }
+  const idx = parseInt(e.target.dataset.idx);
+  const ok  = await confirmar("Remover motorista",
+    `Remover "${nomeMotorista(idx)}"? As marcações dele serão apagadas.`);
+  if(!ok) return;
+  state.motoristas.splice(idx,1);
+  const novasMarc = {};
+  Object.keys(state.marcacoes).forEach(key=>{
+    const [i,d] = key.split(",").map(Number);
+    if(i < idx) novasMarc[key] = state.marcacoes[key];
+    else if(i > idx) novasMarc[`${i-1},${d}`] = state.marcacoes[key];
+  });
+  state.marcacoes = novasMarc;
+  state.observacoes = state.observacoes
+    .filter(o=>o.motorIdx !== idx)
+    .map(o=> o.motorIdx > idx ? {...o, motorIdx:o.motorIdx-1} : o);
+  renderMotoristas();
+  rebuildGrade();
+  renderObservacoes();
+  salvarSessao();
+}
+
+function onNomeMotoristaChange(e){
+  const idx = parseInt(e.target.dataset.idx);
+  if(!state.motoristas[idx]) return;
+  state.motoristas[idx].nome = e.target.value;
+  atualizarNomesGrade();
+  rebuildObsSelects();
+}
+function onNomeMotoristaBlur(e){
+  onNomeMotoristaChange(e);
+  salvarSessao();
+}
+
+/* ============================================================
+   ABA 3 — Marcações de Ponto
+   ============================================================ */
+function rebuildGrade(){
+  bloquearToggle = true;
+  setTimeout(()=> bloquearToggle = false, 250);
+
+  const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena);
+
+  state.motoristas.forEach((_,i)=>{
+    dias.forEach(({dia})=>{
+      const key = `${i},${dia}`;
+      if(!(key in state.marcacoes)) state.marcacoes[key] = "";
+    });
+  });
+
+  const hdrInner = document.getElementById('gradeHdrInner');
+  hdrInner.innerHTML = dias.map(({dia,sem,dom})=>
+    `<div class="grade-hdr-cell ${dom?'dom':''}">${dia}<br>${sem}</div>`
+  ).join('');
+
+  const nomesScroll = document.getElementById('gradeNomesScroll');
+  nomesScroll.innerHTML = state.motoristas.map((m,i)=>{
+    const [bgDark] = corMotorista(i);
+    return `<div class="nome-cell" style="background:${bgDark}" title="${escapeHtml(nomeMotorista(i))}">${escapeHtml(nomeMotorista(i))}</div>`;
+  }).join('');
+
+  const bodyInner = document.getElementById('gradeBodyInner');
+  bodyInner.innerHTML = "";
+  state.motoristas.forEach((m,i)=>{
+    const row = document.createElement('div');
+    row.className = "grade-row";
+    dias.forEach(({dia})=>{
+      const estado = state.marcacoes[`${i},${dia}`] || "";
+      const cel    = document.createElement('div');
+      cel.className = "cel-marc";
+      cel.dataset.i = i;
+      cel.dataset.d = dia;
+      cel.style.background = COR_CELULA_BG[estado];
+      cel.style.color      = COR_CELULA_FG[estado];
+      cel.textContent      = LABEL_CELULA[estado];
+      cel.addEventListener('click', onToggleCelula);
+      row.appendChild(cel);
+    });
+    bodyInner.appendChild(row);
+  });
+
+  const hdrScroll  = document.getElementById('gradeHdrScroll');
+  const bodyScroll = document.getElementById('gradeBodyScroll');
+  bodyScroll.onscroll = ()=>{
+    hdrScroll.scrollLeft  = bodyScroll.scrollLeft;
+    nomesScroll.scrollTop = bodyScroll.scrollTop;
+  };
+  bodyScroll.scrollTop = 0; bodyScroll.scrollLeft = 0;
+  hdrScroll.scrollLeft = 0; nomesScroll.scrollTop = 0;
+  atualizarResumo();
+}
+
+function onToggleCelula(e){
+  if(bloquearToggle) return;
+  const i   = parseInt(e.currentTarget.dataset.i);
+  const d   = parseInt(e.currentTarget.dataset.d);
+  const key = `${i},${d}`;
+  const idx = CICLO_CELULA.indexOf(state.marcacoes[key] || "");
+  const novo = CICLO_CELULA[(idx+1) % CICLO_CELULA.length];
+  state.marcacoes[key] = novo;
+  e.currentTarget.style.background = COR_CELULA_BG[novo];
+  e.currentTarget.style.color      = COR_CELULA_FG[novo];
+  e.currentTarget.textContent      = LABEL_CELULA[novo];
+  atualizarResumo();
+  salvarSessao();
+}
+
+function atualizarNomesGrade(){
+  const cells = document.getElementById('gradeNomesScroll').querySelectorAll('.nome-cell');
+  cells.forEach((cell,i)=>{
+    const nome = nomeMotorista(i);
+    cell.textContent = nome;
+    cell.title = nome;
+  });
+  atualizarResumo();
+}
+
+/* ============================================================
+   Resumo dos totais
+   ============================================================ */
+function atualizarResumo(){
+  coletarFormularioParaState();
+  const totais = calcularTotais();
+  const body   = document.getElementById('resumoBody');
+  body.innerHTML = totais.map((t,i)=>{
+    const adi  = adiantamentoDoMotorista(i);
+    const liqu = Math.max(0, t.total - adi);
+    const adiCell = adi > 0
+      ? `<td style="color:#e74c3c;font-weight:700;">− ${fmtMoeda(adi)}</td>`
+      : `<td style="color:#aaa;">—</td>`;
+    return `<tr>
+      <td class="nome">${escapeHtml(t.nome)}</td>
+      <td>${t.horarios.join(' / ')}</td>
+      <td>${t.viagensNormal}</td>
+      <td>${t.viagensExtra}</td>
+      <td>${t.faltas}</td>
+      <td>${t.atestados}</td>
+      <td>${fmtMoeda(t.valNormal)}</td>
+      <td>${fmtMoeda(t.valExtra)}</td>
+      <td>${fmtMoeda(t.bonificacao)}</td>
+      <td>${fmtMoeda(t.total)}</td>
+      ${adiCell}
+      <td><b style="color:#27ae60;">${fmtMoeda(liqu)}</b></td>
+    </tr>`;
+  }).join('');
+  const totalBruto   = totais.reduce((s,t)=>s+t.total,0);
+  const totalLiquido = totais.reduce((s,t,i)=> s + Math.max(0, t.total - adiantamentoDoMotorista(i)), 0);
+  const totalAdi     = totalBruto - totalLiquido;
+  document.getElementById('totalGeral').textContent =
+    `TOTAL BRUTO: ${fmtMoeda(totalBruto)}   |   ADIANTAMENTOS: − ${fmtMoeda(totalAdi)}   |   LÍQUIDO A PAGAR: ${fmtMoeda(totalLiquido)}`;
+}
+
+/* ============================================================
+   ABA 4 — Observações
+   ============================================================ */
+function renderObservacoes(){
+  const wrap = document.getElementById('listaObs');
+  wrap.innerHTML = "";
+  if(state.observacoes.length === 0){
+    wrap.innerHTML = `<div class="empty-msg">Nenhuma observação. Clique em "➕ Adicionar Observação".</div>`;
+    return;
+  }
+  state.observacoes.forEach((o,idx)=>{
+    const entry = document.createElement('div');
+    entry.className = "obs-entry";
+    const opts = state.motoristas.map((m,i)=>
+      `<option value="${i}" ${i===o.motorIdx?'selected':''}>${escapeHtml(nomeMotorista(i))}</option>`
+    ).join('');
+    entry.innerHTML = `
+      <div class="obs-row">
+        <label>Motorista:</label>
+        <select data-action="obs-motor" data-idx="${idx}">${opts||'<option>(sem motoristas)</option>'}</select>
+        <button class="btn btn-red btn-sm" data-action="obs-rem" data-idx="${idx}" style="margin-left:auto;">✖</button>
+      </div>
+      <div class="obs-row">
+        <label>Observação:</label>
+        <input type="text" data-action="obs-texto" data-idx="${idx}" value="${escapeHtml(o.texto||'')}">
+      </div>`;
+    wrap.appendChild(entry);
+  });
+  wrap.querySelectorAll('[data-action="obs-motor"]').forEach(sel=>
+    sel.addEventListener('change', e=>{
+      state.observacoes[parseInt(e.target.dataset.idx)].motorIdx = parseInt(e.target.value);
+      salvarSessao();
+    }));
+  wrap.querySelectorAll('[data-action="obs-texto"]').forEach(inp=>
+    inp.addEventListener('input', debounce(e=>{
+      state.observacoes[parseInt(e.target.dataset.idx)].texto = e.target.value;
+      salvarSessao();
+    }, 500)));
+  wrap.querySelectorAll('[data-action="obs-rem"]').forEach(btn=>
+    btn.addEventListener('click', e=>{
+      state.observacoes.splice(parseInt(e.target.dataset.idx), 1);
+      renderObservacoes();
+      salvarSessao();
+    }));
+}
+
+function onAddAdi(){
+  state.adiantamentos.push({motorIdx:0, valor:0});
+  renderAdiantamentos();
+  salvarSessao();
+}
+function onAddObs(){
+  state.observacoes.push({motorIdx:0, texto:""});
+  renderObservacoes();
+  salvarSessao();
+}
+function rebuildObsSelects(){ renderObservacoes(); }
+function obsParaMotorista(i){
+  return state.observacoes
+    .filter(o=>o.motorIdx===i && o.texto && o.texto.trim())
+    .map(o=>o.texto.trim()).join(' | ');
+}
+
+/* ============================================================
+   Nova Quinzena
+   ============================================================ */
+async function onNovaQuinzena(){
+  const ok = await confirmar("Nova Quinzena",
+    "Isso vai limpar todas as marcações de ponto e observações, " +
+    "mantendo os motoristas cadastrados.\n\nTem certeza? (salve o relatório antes se necessário)");
+  if(!ok) return;
+  state.marcacoes    = {};
+  state.observacoes  = [];
+  state.adiantamentos = [];
+  rebuildGrade();
+  renderObservacoes();
+  renderAdiantamentos();
+  salvarSessao();
+  setStatus("✔ Pronto para nova quinzena.", "#27ae60");
+}
+
+/* ============================================================
+   Geração de Excel (SheetJS)
+   ============================================================ */
+function gerarExcel(){
+  coletarFormularioParaState();
+  if(!state.motoristas.some(m=>m.nome && m.nome.trim())){
+    alert("Preencha ao menos um nome de motorista."); return;
+  }
+  const dias   = diasNaQuinzena(state.ano, state.mes, state.quinzena);
+  const totais = calcularTotais();
+  const mn     = MESES_PT[state.mes].toUpperCase();
+  const qs     = `${state.quinzena}ª QUINZENA ${mn} ${state.ano}`;
+  const aoa    = [];
+
+  aoa.push(["CONTROLE DE PONTO"]);
+  aoa.push([qs]);
+  aoa.push([]);
+
+  aoa.push(["▶ VIAGEM NORMAL"]);
+  aoa.push(["Motorista", ...dias.map(d=>`${d.dia}/${d.sem}`), "TOTAL V","FALTAS","ATESTADO"]);
+  state.motoristas.forEach((m,i)=>{
+    const row = [nomeMotorista(i)];
+    dias.forEach(({dia})=>{
+      const v = state.marcacoes[`${i},${dia}`] || "";
+      row.push({"V20":"V 20:00","V11":"V 11:00","VE20":"","VE11":"","F":"F","A":"A","":""}[v]);
+    });
+    const t = totais[i];
+    row.push(t.viagensNormal, t.faltas, t.atestados);
+    aoa.push(row);
+  });
+  aoa.push([]);
+
+  aoa.push(["▶ VIAGEM EXTRA"]);
+  aoa.push(["Motorista", ...dias.map(d=>`${d.dia}/${d.sem}`), "TOTAL VE","VLR EXTRA"]);
+  state.motoristas.forEach((m,i)=>{
+    const row = [nomeMotorista(i)];
+    dias.forEach(({dia})=>{
+      const v = state.marcacoes[`${i},${dia}`] || "";
+      row.push(v==="VE20" ? "VE 20:00" : v==="VE11" ? "VE 11:00" : "");
+    });
+    const t = totais[i];
+    row.push(t.viagensExtra, t.valExtra);
+    aoa.push(row);
+  });
+  aoa.push([]);
+
+  aoa.push(["▶ RESUMO FINANCEIRO – MOTORISTAS A PAGAR"]);
+  aoa.push(["Motorista","Horários","V.Normal","V.Extra","Faltas","Atestados",
+             "Vlr.Normal","Vlr.Extra","Bonificação","TOTAL BRUTO","Adiantamento","Data Adiant.","LÍQUIDO A PAGAR","Observação"]);
+  let totalBrutoXls=0, totalAdiXls=0, totalLiqXls=0;
+  totais.forEach((t,i)=>{
+    const adi  = adiantamentoDoMotorista(i);
+    const liqu = Math.max(0, t.total - adi);
+    const datasAdi = state.adiantamentos
+      .filter(a=> a.motorIdx===i && (a.valor||0)>0 && a.data)
+      .map(a=>{ const [ay,am,ad]=a.data.split('-'); return `${ad}/${am}/${ay}`; })
+      .join(', ');
+    totalBrutoXls += t.total; totalAdiXls += adi; totalLiqXls += liqu;
+    aoa.push([t.nome, t.horarios.join(' / '), t.viagensNormal, t.viagensExtra,
+              t.faltas, t.atestados, t.valNormal, t.valExtra, t.bonificacao,
+              t.total, adi||0, datasAdi||'—', liqu, obsParaMotorista(i)]);
+  });
+  aoa.push(["TOTAL GERAL","","","","","","","","",totalBrutoXls, totalAdiXls||0,"",totalLiqXls,""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:26},{wch:10}, ...dias.map(()=>({wch:6}))];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, qs.substring(0,31));
+  XLSX.writeFile(wb, `FICHA_${state.quinzena}Q_${mn}_${state.ano}.xlsx`);
+  setStatus(`✔ Excel gerado.`, "#27ae60");
+  showToast("Planilha Excel baixada!");
+}
+
+/* ============================================================
+   Geração de PDF (jsPDF + autoTable)
+   ============================================================ */
+function gerarPdfDoc(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
+  coletarFormularioParaState();
+  const dias    = diasNaQuinzena(state.ano, state.mes, state.quinzena);
+  const totais  = calcularTotais();
+  const mesNome = MESES_PT[state.mes];
+  const quinzStr = `${state.quinzena}ª Quinzena de ${mesNome} de ${state.ano}`;
+
+  doc.setFontSize(16); doc.setTextColor(26,42,74); doc.setFont(undefined,'bold');
+  doc.text("CONTROLE DE PONTO", doc.internal.pageSize.getWidth()/2, 14, {align:'center'});
+  doc.setFontSize(11); doc.setTextColor(44,74,138);
+  doc.text(quinzStr.toUpperCase(), doc.internal.pageSize.getWidth()/2, 21, {align:'center'});
+
+  const PDF_LBL = {"":"·","V20":"V 20h","V11":"V 11h","VE20":"VE 20h","VE11":"VE 11h","F":"F","A":"A"};
+  const PDF_COR = {
+    "V20":[36,113,163],"V11":[26,82,118],
+    "VE20":[17,122,101],"VE11":[11,83,69],
+    "F":[192,57,43],"A":[30,132,73]
+  };
+
+  const head1 = [["Motorista", ...dias.map(d=>`${d.dia}\n${d.sem}`)]];
+  const body1 = state.motoristas
+    .map((m,i)=> m.nome ? [nomeMotorista(i), ...dias.map(({dia})=> PDF_LBL[state.marcacoes[`${i},${dia}`]||""] || "·")] : null)
+    .filter(Boolean);
+
+  doc.autoTable({
+    head: head1, body: body1, startY: 26,
+    styles:{fontSize:6.5, halign:'center', valign:'middle', cellPadding:1},
+    headStyles:{fillColor:[26,42,74], textColor:255, fontStyle:'bold'},
+    columnStyles:{0:{halign:'left', cellWidth:32}},
+    didParseCell: function(data){
+      if(data.section==='body' && data.column.index>0){
+        const v = state.marcacoes[`${data.row.index},${dias[data.column.index-1].dia}`] || "";
+        if(PDF_COR[v]){ data.cell.styles.fillColor = PDF_COR[v]; data.cell.styles.textColor = 255; }
+      }
+    }
+  });
+
+  let y = doc.lastAutoTable.finalY + 8;
+  doc.setFontSize(9); doc.setTextColor(30,107,58); doc.setFont(undefined,'bold');
+  doc.text("RESUMO FINANCEIRO – MOTORISTAS A PAGAR", 10, y);
+
+  const head2 = [["Motorista","20h/11h","V.Norm","V.Extra","Faltas","Atest.",
+                  "Vlr.Normal","Vlr.Extra","Bonif.","TOTAL BRUTO","Adiantamento","LÍQUIDO A PAGAR","Observação"]];
+  const body2 = totais.map((t,i)=>{
+    const adi  = adiantamentoDoMotorista(i);
+    const liqu = Math.max(0, t.total - adi);
+    const datasAdi = state.adiantamentos
+      .filter(a=> a.motorIdx===i && (a.valor||0)>0 && a.data)
+      .map(a=>{ const [ay,am,ad]=a.data.split('-'); return `${ad}/${am}`; })
+      .join(', ');
+    const adiLabel = adi > 0 ? `- ${fmtMoeda(adi)}${datasAdi?' ('+datasAdi+')':''}` : '—';
+    return [t.nome, "20h/11h", t.viagensNormal, t.viagensExtra, t.faltas, t.atestados,
+      fmtMoeda(t.valNormal), fmtMoeda(t.valExtra), fmtMoeda(t.bonificacao),
+      fmtMoeda(t.total), adiLabel, fmtMoeda(liqu), obsParaMotorista(i)];
+  });
+  const totalBrutoPdf  = totais.reduce((s,t)=>s+t.total,0);
+  const totalLiqPdf    = totais.reduce((s,t,i)=> s + Math.max(0, t.total - adiantamentoDoMotorista(i)), 0);
+  const totalAdiPdf    = totalBrutoPdf - totalLiqPdf;
+  body2.push(["TOTAL GERAL","","","","","","","","",
+    fmtMoeda(totalBrutoPdf),
+    totalAdiPdf>0 ? `- ${fmtMoeda(totalAdiPdf)}` : '—',
+    fmtMoeda(totalLiqPdf), ""]);
+
+  doc.autoTable({
+    head: head2, body: body2, startY: y+3,
+    styles:{fontSize:6.5, halign:'center', cellPadding:1.2},
+    headStyles:{fillColor:[26,42,74], textColor:255, fontStyle:'bold'},
+    columnStyles:{0:{halign:'left', cellWidth:28}, 12:{halign:'left', cellWidth:22}},
+    didParseCell: function(data){
+      const isLast = data.row.index === body2.length-1;
+      if(data.section==='body' && isLast){
+        data.cell.styles.fillColor=[30,107,58]; data.cell.styles.textColor=255; data.cell.styles.fontStyle='bold';
+      } else if(data.section==='body' && data.column.index===10 && data.cell.raw !== '—'){
+        data.cell.styles.textColor=[192,57,43]; data.cell.styles.fontStyle='bold';
+      } else if(data.section==='body' && data.column.index===11){
+        data.cell.styles.fontStyle='bold';
+      }
+    }
+  });
+
+  // Adiantamentos no PDF
+  const temAdi = state.adiantamentos && state.adiantamentos.some(a=>(a.valor||0)>0);
+  if(temAdi){
+    let yA = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(9); doc.setTextColor(192,57,43); doc.setFont(undefined,'bold');
+    doc.text("ADIANTAMENTOS – DESCONTO NO PAGAMENTO", 10, yA);
+    const head3 = [["Motorista","Total Bruto","Adiantamento","LÍQUIDO A PAGAR"]];
+    const body3 = totais.map((t,i)=>{
+      const adi  = adiantamentoDoMotorista(i);
+      const liqu = Math.max(0, t.total - adi);
+      return [t.nome, fmtMoeda(t.total), adi>0 ? '− '+fmtMoeda(adi) : '—', fmtMoeda(liqu)];
+    });
+    const liquGeralPdf = totais.reduce((s,t,i)=> s + Math.max(0, t.total - adiantamentoDoMotorista(i)), 0);
+    body3.push(["TOTAL LÍQUIDO","","",fmtMoeda(liquGeralPdf)]);
+    doc.autoTable({
+      head: head3, body: body3, startY: yA+3,
+      styles:{fontSize:8, halign:'center', cellPadding:1.5},
+      headStyles:{fillColor:[192,57,43], textColor:255, fontStyle:'bold'},
+      columnStyles:{0:{halign:'left'}},
+      didParseCell: function(data){
+        const isLast = data.row.index === body3.length-1;
+        if(data.section==='body' && isLast){
+          data.cell.styles.fillColor=[30,107,58]; data.cell.styles.textColor=255; data.cell.styles.fontStyle='bold';
+        } else if(data.section==='body' && data.column.index===2 && data.cell.text[0]!=='—'){
+          data.cell.styles.textColor=[192,57,43]; data.cell.styles.fontStyle='bold';
+        } else if(data.section==='body' && data.column.index===0){
+          data.cell.styles.fillColor=hexToRgb(corMotorista(data.row.index)[0]);
+          data.cell.styles.textColor=255;
+        }
+      }
+    });
+  }
+
+  doc.setFontSize(7); doc.setTextColor(150);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · Ficha Diária – Controle de Ponto`,
+    doc.internal.pageSize.getWidth()-10, doc.internal.pageSize.getHeight()-6, {align:'right'});
+  return doc;
+}
+
+function hexToRgb(hex){
+  hex = hex.replace('#','');
+  const num = parseInt(hex,16);
+  return [(num>>16)&255,(num>>8)&255,num&255];
+}
+
+function visualizarPdf(){
+  coletarFormularioParaState();
+  if(!state.motoristas.some(m=>m.nome && m.nome.trim())){
+    alert("Preencha ao menos um nome de motorista."); return;
+  }
+  setStatus("⏳ Gerando PDF…", "#f39c12");
+  try{
+    const doc    = gerarPdfDoc();
+    const blobUrl = doc.output('bloburl');
+    document.getElementById('pdfPreviewBody').innerHTML =
+      `<iframe src="${blobUrl}" style="width:100%;height:60vh;border:1px solid #ccc;border-radius:4px;"></iframe>`;
+    document.getElementById('modalPdf').classList.add('show');
+    window._pdfDocAtual = doc;
+    setStatus("✔ PDF pronto.", "#27ae60");
+  }catch(e){
+    console.error(e);
+    setStatus("✘ Erro ao gerar PDF.", "#e74c3c");
+    alert("Erro ao gerar PDF: " + e.message);
+  }
+}
+
+function salvarPdfAtual(){
+  if(!window._pdfDocAtual) return;
+  const mn = MESES_PT[state.mes].toUpperCase();
+  window._pdfDocAtual.save(`RELATORIO_${state.quinzena}Q_${mn}_${state.ano}.pdf`);
+  document.getElementById('modalPdf').classList.remove('show');
+  showToast("PDF salvo!");
+}
+
+/* ============================================================
+   ABA 5 — Adiantamentos
+   ============================================================ */
+function renderAdiantamentos(){
+  const wrap = document.getElementById('listaAdiantamentos');
+  wrap.innerHTML = "";
+  if(state.adiantamentos.length === 0){
+    wrap.innerHTML = `<div class="empty-msg">Nenhum adiantamento. Clique em "➕ Adicionar Adiantamento".</div>`;
+    atualizarResumoAdiantamentos();
+    return;
+  }
+  state.adiantamentos.forEach((a, idx)=>{
+    const entry = document.createElement('div');
+    entry.className = "obs-entry";
+    const opts = state.motoristas.map((m,i)=>
+      `<option value="${i}" ${i===a.motorIdx?'selected':''}>${escapeHtml(nomeMotorista(i))}</option>`
+    ).join('');
+    const dataFmt = a.data || "";
+    entry.innerHTML = `
+      <div class="obs-row">
+        <label>Motorista:</label>
+        <select data-action="adi-motor" data-idx="${idx}">${opts||'<option>(sem motoristas)</option>'}</select>
+        <button class="btn btn-red btn-sm" data-action="adi-rem" data-idx="${idx}" style="margin-left:auto;">✖ Remover</button>
+      </div>
+      <div class="obs-row">
+        <label>Data do adiantamento:</label>
+        <input type="date" data-action="adi-data" data-idx="${idx}" value="${dataFmt}" style="width:180px;">
+      </div>
+      <div class="obs-row">
+        <label>Valor (R$):</label>
+        <input type="number" min="0" step="0.01" data-action="adi-valor" data-idx="${idx}"
+               value="${a.valor||0}" style="width:160px;">
+        <span style="color:#888;font-size:.82rem;">→ será descontado do total a pagar</span>
+      </div>`;
+    wrap.appendChild(entry);
+  });
+  wrap.querySelectorAll('[data-action="adi-motor"]').forEach(sel=>
+    sel.addEventListener('change', e=>{
+      state.adiantamentos[parseInt(e.target.dataset.idx)].motorIdx = parseInt(e.target.value);
+      atualizarResumoAdiantamentos();
+      salvarSessao();
+    }));
+  wrap.querySelectorAll('[data-action="adi-data"]').forEach(inp=>
+    inp.addEventListener('change', e=>{
+      state.adiantamentos[parseInt(e.target.dataset.idx)].data = e.target.value;
+      salvarSessao();
+    }));
+  wrap.querySelectorAll('[data-action="adi-valor"]').forEach(inp=>
+    inp.addEventListener('input', debounce(e=>{
+      state.adiantamentos[parseInt(e.target.dataset.idx)].valor = parseFloat(e.target.value)||0;
+      atualizarResumoAdiantamentos();
+      salvarSessao();
+    }, 400)));
+  wrap.querySelectorAll('[data-action="adi-rem"]').forEach(btn=>
+    btn.addEventListener('click', e=>{
+      state.adiantamentos.splice(parseInt(e.target.dataset.idx), 1);
+      renderAdiantamentos();
+      salvarSessao();
+    }));
+  atualizarResumoAdiantamentos();
+}
+
+function adiantamentoDoMotorista(i){
+  return state.adiantamentos
+    .filter(a=> a.motorIdx === i)
+    .reduce((s,a)=> s + (parseFloat(a.valor)||0), 0);
+}
+
+function atualizarResumoAdiantamentos(){
+  // Integrada no resumo principal — não faz nada separado
+}
+
+/* ============================================================
+   Renderização geral / inicialização
+   ============================================================ */
+function renderTudo(){
+  initTabCfg();
+  renderMotoristas();
+  rebuildGrade();
+  renderObservacoes();
+  renderAdiantamentos();
+}
+
+let _tabsInit = false;
+function initTabsEBotoes(){
+  if(_tabsInit) return;
+  _tabsInit = true;
+
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+      window.scrollTo({top:0, behavior:'instant'});
+      if(btn.dataset.tab === 'marc'){
+        setTimeout(()=>{
+          document.getElementById('gradeBodyScroll').scrollTop = 0;
+          document.getElementById('gradeNomesScroll').scrollTop = 0;
+        }, 30);
+      }
+    });
+  });
+
+  // Footer buttons
+  document.getElementById('btnAddMotorista').addEventListener('click', onAddMotorista);
+  document.getElementById('btnAddObs').addEventListener('click', onAddObs);
+  document.getElementById('btnAddAdi').addEventListener('click', onAddAdi);
+  document.getElementById('btnAtualizarGrade').addEventListener('click', ()=> setTimeout(rebuildGrade, 50));
+  document.getElementById('btnAtualizar').addEventListener('click', ()=> setTimeout(()=>{ rebuildGrade(); atualizarResumo(); }, 50));
+  document.getElementById('btnNovaQuinzena').addEventListener('click', onNovaQuinzena);
+  document.getElementById('btnPdf').addEventListener('click', visualizarPdf);
+  document.getElementById('btnExcel').addEventListener('click', gerarExcel);
+  document.getElementById('btnSalvar').addEventListener('click', async ()=>{
+    await salvarSessao();
+    showToast("☁️ Dados salvos na nuvem!");
+  });
+  document.getElementById('btnFecharPdf').addEventListener('click', ()=>
+    document.getElementById('modalPdf').classList.remove('show'));
+  document.getElementById('btnSalvarPdf').addEventListener('click', salvarPdfAtual);
+}
+
+// Boot
+document.addEventListener('DOMContentLoaded', ()=>{
+  initAuth();
+});
+</script>
+</body>
+</html>
