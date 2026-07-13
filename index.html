@@ -1356,7 +1356,7 @@ function gerarPdfDoc(){
   doc.text("RESUMO FINANCEIRO – MOTORISTAS A PAGAR", 10, y);
 
   const head2 = [["Motorista","20h/11h","V.Norm","V.Extra","Faltas","Atest.",
-                  "Vlr.Normal","Vlr.Extra","Bonif.","TOTAL BRUTO","Adiantamento","LÍQUIDO A PAGAR","Observação"]];
+                  "Vlr.Normal","Vlr.Extra","Bonif.","TOTAL BRUTO","Adiantamento","Data Adiant.","LÍQUIDO A PAGAR","Observação"]];
   const body2 = totais.map((t,i)=>{
     const adi  = adiantamentoDoMotorista(i);
     const liqu = Math.max(0, t.total - adi);
@@ -1364,10 +1364,10 @@ function gerarPdfDoc(){
       .filter(a=> a.motorIdx===i && (a.valor||0)>0 && a.data)
       .map(a=>{ const [ay,am,ad]=a.data.split('-'); return `${ad}/${am}`; })
       .join(', ');
-    const adiLabel = adi > 0 ? `- ${fmtMoeda(adi)}${datasAdi?' ('+datasAdi+')':''}` : '—';
+    const adiLabel = adi > 0 ? `- ${fmtMoeda(adi)}` : '—';
     return [t.nome, "20h/11h", t.viagensNormal, t.viagensExtra, t.faltas, t.atestados,
       fmtMoeda(t.valNormal), fmtMoeda(t.valExtra), fmtMoeda(t.bonificacao),
-      fmtMoeda(t.total), adiLabel, fmtMoeda(liqu), obsParaMotorista(i)];
+      fmtMoeda(t.total), adiLabel, datasAdi||'—', fmtMoeda(liqu), obsParaMotorista(i)];
   });
   const totalBrutoPdf  = totais.reduce((s,t)=>s+t.total,0);
   const totalLiqPdf    = totais.reduce((s,t,i)=> s + Math.max(0, t.total - adiantamentoDoMotorista(i)), 0);
@@ -1375,57 +1375,24 @@ function gerarPdfDoc(){
   body2.push(["TOTAL GERAL","","","","","","","","",
     fmtMoeda(totalBrutoPdf),
     totalAdiPdf>0 ? `- ${fmtMoeda(totalAdiPdf)}` : '—',
-    fmtMoeda(totalLiqPdf), ""]);
+    "", fmtMoeda(totalLiqPdf), ""]);
 
   doc.autoTable({
     head: head2, body: body2, startY: y+3,
     styles:{fontSize:6.5, halign:'center', cellPadding:1.2},
     headStyles:{fillColor:[26,42,74], textColor:255, fontStyle:'bold'},
-    columnStyles:{0:{halign:'left', cellWidth:28}, 12:{halign:'left', cellWidth:22}},
+    columnStyles:{0:{halign:'left', cellWidth:25}, 13:{halign:'left', cellWidth:18}},
     didParseCell: function(data){
       const isLast = data.row.index === body2.length-1;
       if(data.section==='body' && isLast){
         data.cell.styles.fillColor=[30,107,58]; data.cell.styles.textColor=255; data.cell.styles.fontStyle='bold';
       } else if(data.section==='body' && data.column.index===10 && data.cell.raw !== '—'){
         data.cell.styles.textColor=[192,57,43]; data.cell.styles.fontStyle='bold';
-      } else if(data.section==='body' && data.column.index===11){
+      } else if(data.section==='body' && data.column.index===12){
         data.cell.styles.fontStyle='bold';
       }
     }
   });
-
-  // Adiantamentos no PDF
-  const temAdi = state.adiantamentos && state.adiantamentos.some(a=>(a.valor||0)>0);
-  if(temAdi){
-    let yA = doc.lastAutoTable.finalY + 8;
-    doc.setFontSize(9); doc.setTextColor(192,57,43); doc.setFont(undefined,'bold');
-    doc.text("ADIANTAMENTOS – DESCONTO NO PAGAMENTO", 10, yA);
-    const head3 = [["Motorista","Total Bruto","Adiantamento","LÍQUIDO A PAGAR"]];
-    const body3 = totais.map((t,i)=>{
-      const adi  = adiantamentoDoMotorista(i);
-      const liqu = Math.max(0, t.total - adi);
-      return [t.nome, fmtMoeda(t.total), adi>0 ? '− '+fmtMoeda(adi) : '—', fmtMoeda(liqu)];
-    });
-    const liquGeralPdf = totais.reduce((s,t,i)=> s + Math.max(0, t.total - adiantamentoDoMotorista(i)), 0);
-    body3.push(["TOTAL LÍQUIDO","","",fmtMoeda(liquGeralPdf)]);
-    doc.autoTable({
-      head: head3, body: body3, startY: yA+3,
-      styles:{fontSize:8, halign:'center', cellPadding:1.5},
-      headStyles:{fillColor:[192,57,43], textColor:255, fontStyle:'bold'},
-      columnStyles:{0:{halign:'left'}},
-      didParseCell: function(data){
-        const isLast = data.row.index === body3.length-1;
-        if(data.section==='body' && isLast){
-          data.cell.styles.fillColor=[30,107,58]; data.cell.styles.textColor=255; data.cell.styles.fontStyle='bold';
-        } else if(data.section==='body' && data.column.index===2 && data.cell.text[0]!=='—'){
-          data.cell.styles.textColor=[192,57,43]; data.cell.styles.fontStyle='bold';
-        } else if(data.section==='body' && data.column.index===0){
-          data.cell.styles.fillColor=hexToRgb(corMotorista(data.row.index)[0]);
-          data.cell.styles.textColor=255;
-        }
-      }
-    });
-  }
 
   doc.setFontSize(7); doc.setTextColor(150);
   doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · Ficha Diária – Controle de Ponto`,
