@@ -17,10 +17,6 @@
 
   <!-- Firebase SDK -->
   <script type="module">
-    // CONFIGURAÇÃO DO FIREBASE
-    // Substitua os valores abaixo pelos do SEU projeto Firebase.
-    // Veja o arquivo LEIA-ME-FIREBASE.txt para instruções passo a passo.
-
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
       getAuth,
@@ -28,7 +24,6 @@
       signOut,
       onAuthStateChanged,
       updatePassword,
-      updateEmail,
       reauthenticateWithCredential,
       EmailAuthProvider,
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -52,9 +47,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Expor funções de nuvem para o código global (não-module)
     window.fb = {
-      // Salva os dados da quinzena na nuvem
       salvar: async function (state) {
         const uid = auth.currentUser?.uid;
         if (!uid) return;
@@ -64,52 +57,38 @@
           state
         );
       },
-
-      // Carrega todos os dados do usuário (última quinzena salva / dados de configuração)
       carregar: async function (chave) {
         const uid = auth.currentUser?.uid;
         if (!uid) return null;
         const snap = await getDoc(doc(db, "fichas", uid, "quinzenas", chave));
         return snap.exists() ? snap.data() : null;
       },
-
-      // Salva configuração persistente do usuário (valores padrão, nome empresa etc.)
       salvarConfig: async function (cfg) {
         const uid = auth.currentUser?.uid;
         if (!uid) return;
         await setDoc(doc(db, "fichas", uid, "config", "geral"), cfg);
       },
-
       carregarConfig: async function () {
         const uid = auth.currentUser?.uid;
         if (!uid) return null;
         const snap = await getDoc(doc(db, "fichas", uid, "config", "geral"));
         return snap.exists() ? snap.data() : null;
       },
-
-      // Login com e-mail + senha (Firebase Auth)
       login: function (email, senha) {
         return signInWithEmailAndPassword(auth, email, senha);
       },
-
       logout: function () {
         return signOut(auth);
       },
-
-      // Alterar senha
       alterarSenha: async function (senhaAtual, novaSenha) {
         const user = auth.currentUser;
         const cred = EmailAuthProvider.credential(user.email, senhaAtual);
         await reauthenticateWithCredential(user, cred);
         await updatePassword(user, novaSenha);
       },
-
-      // Observar estado de autenticação
       onAuth: function (callback) {
         return onAuthStateChanged(auth, callback);
       },
-
-      // E-mail atual
       getEmail: function () {
         return auth.currentUser?.email;
       },
@@ -149,7 +128,6 @@
       color: var(--texto);
     }
 
-    /* Header */
     header {
       background: var(--azul-esc);
       color: var(--branco);
@@ -174,7 +152,6 @@
       flex-wrap: wrap;
     }
 
-    /* Tabs */
     .tabs {
       display: flex;
       background: var(--card);
@@ -212,7 +189,6 @@
       display: block;
     }
 
-    /* Cards */
     .card {
       background: var(--bg);
       border: 1px solid #c8d4e3;
@@ -276,7 +252,6 @@
       font-style: italic;
     }
 
-    /* Legenda */
     .legenda {
       display: flex;
       gap: 8px;
@@ -301,7 +276,6 @@
       margin-bottom: 3px;
     }
 
-    /* Botões genéricos */
     button {
       cursor: pointer;
       font-family: inherit;
@@ -370,7 +344,6 @@
       border-radius: 4px;
     }
 
-    /* Motoristas */
     .listaMotoristas {
       display: flex;
       flex-direction: column;
@@ -420,7 +393,6 @@
       font-style: italic;
     }
 
-    /* Grade de marcações */
     .grade-toolbar {
       display: flex;
       align-items: center;
@@ -556,7 +528,6 @@
       outline-offset: -2px;
     }
 
-    /* Resumo */
     #resumoWrap {
       background: #0d1b2e;
       border-radius: 8px;
@@ -622,7 +593,6 @@
       font-size: 1.05rem;
     }
 
-    /* Footer */
     footer {
       background: var(--azul-esc);
       padding: 12px 16px;
@@ -647,7 +617,6 @@
       font-weight: 700;
     }
 
-    /* Observações */
     .obs-entry {
       border: 1px solid #c8d4e3;
       border-radius: 6px;
@@ -690,7 +659,6 @@
       padding: 30px 0;
     }
 
-    /* Modal */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -744,7 +712,6 @@
       line-height: 1.5;
     }
 
-    /* Toast */
     #toast {
       position: fixed;
       bottom: 70px;
@@ -767,7 +734,6 @@
       transform: translateX(-50%) translateY(0);
     }
 
-    /* Scrollbar custom */
     ::-webkit-scrollbar {
       height: 10px;
       width: 10px;
@@ -796,7 +762,6 @@
       }
     }
 
-    /* Escala */
     .esc-par {
       border: 1px solid #c8d4e3;
       border-radius: 8px;
@@ -938,7 +903,6 @@
       font-size: .72rem;
     }
 
-    /* Tela de Login */
     #loginOverlay {
       position: fixed;
       inset: 0;
@@ -1044,7 +1008,6 @@
       font-weight: 700;
     }
 
-    /* Loading overlay */
     #loadingOverlay {
       position: fixed;
       inset: 0;
@@ -1084,13 +1047,11 @@
   </style>
 </head>
 <body>
-  <!-- Loading overlay -->
   <div id="loadingOverlay">
     <div class="spinner"></div>
     <div id="loadingMsg">Conectando à nuvem...</div>
   </div>
 
-  <!-- Tela de Login Firebase Auth -->
   <div id="loginOverlay" class="hidden">
     <div class="login-box">
       <div class="login-logo">🚌</div>
@@ -1123,7 +1084,6 @@
     </div>
   </div>
 
-  <!-- Modal Alterar Senha -->
   <div class="modal-overlay" id="modalSenha">
     <div class="modal-box">
       <div class="modal-hdr">
@@ -1178,7 +1138,7 @@
   <header>
     <h1>FICHA DIÁRIA – CONTROLE DE PONTO</h1>
     <div class="sub">
-      <span>Viagem Normal · Viagem Extra · Faltas · Atestados · Excel · PDF</span>
+      <span>Viagem Normal · Viagem Extra · Faltas · Atestados · Excel · PDF · Recibos</span>
       <span id="emailLogado" style="color: #7fbfff; font-size: .74rem;"></span>
       <button
         id="btnAlterarSenha"
@@ -1298,7 +1258,7 @@
     <div class="row" style="margin-bottom: 10px;">
       <button class="btn btn-green" id="btnAddMotorista">Adicionar Motorista</button>
       <span class="obs-hint">
-        Adicione motoristas. Horários fixos 20:00 e 11:00.
+        Adicione motoristas. Horários fixos 20:00 e 11:00. Cadastre também o CPF para uso nos recibos.
       </span>
     </div>
     <div id="listaMotoristas" class="listaMotoristas"></div>
@@ -1347,7 +1307,7 @@
           <tbody id="resumoBody"></tbody>
         </table>
       </div>
-      <div id="totalGeral">TOTAL GERAL R$ 0,00</div>
+      <div id="totalGeral">TOTAL BRUTO R$ 0,00 · ADIANTAMENTOS R$ 0,00 · LÍQUIDO A PAGAR R$ 0,00</div>
     </div>
   </div>
 
@@ -1447,7 +1407,6 @@
 
   <!-- ABA 7 - Recibos de Pagamento -->
   <div class="tab-content" id="tab-rec">
-    <!-- Card: Empresas cadastradas -->
     <div class="card">
       <h3>Empresas</h3>
 
@@ -1515,7 +1474,6 @@
       <div id="listaEmpresasRec" style="margin-top: 12px;"></div>
     </div>
 
-    <!-- Card: Emissão de recibo -->
     <div class="card">
       <h3>Emitir Recibo de Pagamento</h3>
 
@@ -1563,7 +1521,7 @@
         <input
           type="text"
           id="recPeriodo"
-          placeholder="Ex.: do dia 01 até o dia 15 de maio de 2026"
+          placeholder="Ex.: referente ao serviço prestado na 2ª quinzena de maio de 2026."
           style="flex: 1;"
         />
       </div>
@@ -1604,7 +1562,6 @@
         </button>
       </div>
 
-      <!-- Preview do texto do recibo -->
       <div
         id="reciboPreview"
         style="margin-top: 16px; padding: 12px 14px; border-radius: 6px; border: 1px solid #c8d4e3; background: #f5f8fc; font-size: .9rem; line-height: 1.6;"
@@ -1621,14 +1578,13 @@
   <footer>
     <button class="btn btn-orange btn-sm" id="btnNovaQuinzena">Nova Quinzena</button>
     <button class="btn btn-blue btn-sm" id="btnAtualizar">Atualizar</button>
-    <button class="btn btn-purple" id="btnPdf">VISUALIZAR PDF</button>
-    <button class="btn btn-green" id="btnExcel">GERAR EXCEL</button>
-    <button class="btn btn-darkgreen" id="btnSalvar">SALVAR NA NUVEM</button>
+    <button class="btn btnPurple" id="btnPdf">VISUALIZAR PDF</button>
+    <button class="btn btnGreen" id="btnExcel">GERAR EXCEL</button>
+    <button class="btn btnDarkgreen" id="btnSalvar">SALVAR NA NUVEM</button>
     <span id="ultimoSave"></span>
     <span id="statusMsg">Preencha os dados e gere o relatório.</span>
   </footer>
 
-  <!-- Modal Confirmação genérica -->
   <div class="modal-overlay" id="modalConfirm">
     <div class="modal-box">
       <div class="modal-hdr">
@@ -1651,7 +1607,6 @@
     </div>
   </div>
 
-  <!-- Modal Preview PDF -->
   <div class="modal-overlay" id="modalPdf">
     <div class="modal-box" style="max-width: 900px;">
       <div class="modal-hdr">
@@ -1668,10 +1623,6 @@
   <div id="toast"></div>
 
   <script>
-    // Ficha Diária – Controle de Ponto (versão Web Firebase)
-    // Dados salvos no Firestore. Auth via Firebase Authentication.
-
-    // ----------------------- Constantes -----------------------
     const ABREV_CURTA = ["D", "S", "T", "Q", "Q", "S", "S"];
     const MESES_PT = [
       "",
@@ -1728,7 +1679,6 @@
       COR_CELULA_FG[i] = k ? "#ffffff" : "#1a2a4a";
     });
 
-    // ----------------------- Estado global -----------------------
     let state = {
       ano: new Date().getFullYear(),
       mes: new Date().getMonth() + 1,
@@ -1740,13 +1690,12 @@
       observacoes: [],
       adiantamentos: [],
       escala: { quinzena: 1, origem: "", pares: [] },
-      empresasRecibo: [], // NOVO: empresas cadastradas para recibos
+      empresasRecibo: [],
     };
 
     let bloquearToggle = false;
-    let appPronto = false; // true após login e carregamento
+    let appPronto = false;
 
-    // ----------------------- Loading overlay -----------------------
     function mostrarLoading(msg) {
       document.getElementById("loadingMsg").textContent = msg || "Aguarde...";
       document.getElementById("loadingOverlay").classList.remove("hidden");
@@ -1756,7 +1705,6 @@
       document.getElementById("loadingOverlay").classList.add("hidden");
     }
 
-    // ----------------------- Persistência na nuvem Firebase -----------------------
     async function salvarSessao() {
       if (!appPronto) return;
       try {
@@ -1817,7 +1765,6 @@
       }
     }
 
-    // Quando muda mês/quinzena, busca aquele período da nuvem
     async function carregarPeriodo() {
       mostrarLoading("Buscando dados da quinzena...");
       coletarFormularioParaState();
@@ -1846,7 +1793,6 @@
             : [];
           showToast("Período carregado da nuvem.");
         } else {
-          // Período novo mantém motoristas, mas limpa marcações
           state.marcacoes = {};
           state.observacoes = [];
           state.adiantamentos = [];
@@ -1862,29 +1808,24 @@
       }
     }
 
-    // ----------------------- Auth Firebase -----------------------
     function initAuth() {
       const overlay = document.getElementById("loginOverlay");
-      const loadingEl = document.getElementById("loadingOverlay");
 
-      // Aguarda Firebase dizer se há sessão ativa
       const esperarFb = setInterval(() => {
         if (!window.fb) return;
         clearInterval(esperarFb);
 
         window.fb.onAuth(async (user) => {
           if (user) {
-            // Usuário autenticado
             overlay.classList.add("hidden");
             document.getElementById("emailLogado").textContent = user.email;
             mostrarLoading("Carregando dados da nuvem...");
 
             const tinhaDados = await carregarSessao();
             if (!tinhaDados && state.motoristas.length === 0) {
-              // Se não houver dados, inicia com 2 motoristas padrão
               state.motoristas = [
-                { nome: "Motorista 1", horarios: [2000, 1100] },
-                { nome: "Motorista 2", horarios: [2000, 1100] },
+                { nome: "Motorista 1", cpf: "", horarios: [2000, 1100] },
+                { nome: "Motorista 2", cpf: "", horarios: [2000, 1100] },
               ];
             }
 
@@ -1898,7 +1839,6 @@
               tinhaDados ? "#27ae60" : "#9ab8d8"
             );
           } else {
-            // Não autenticado – mostra login
             appPronto = false;
             overlay.classList.remove("hidden");
             ocultarLoading();
@@ -1906,7 +1846,6 @@
         });
       }, 100);
 
-      // Botão entrar
       document
         .getElementById("btnEntrar")
         .addEventListener("click", () => {
@@ -1919,13 +1858,10 @@
         });
       });
 
-      // Sair
       document.getElementById("btnSair").addEventListener("click", async () => {
         await window.fb.logout();
-        // onAuth dispara automaticamente e mostra login
       });
 
-      // Alterar senha
       document
         .getElementById("btnAlterarSenha")
         .addEventListener("click", () => {
@@ -1967,7 +1903,6 @@
 
       try {
         await window.fb.login(email, senha);
-        // onAuth cuida do resto
       } catch (err) {
         erroEl.textContent = traduzirErroFirebase(err.code);
         erroEl.classList.add("show");
@@ -2026,7 +1961,6 @@
       return map[code] || "Erro: " + code;
     }
 
-    // ----------------------- Utilidades de data -----------------------
     function diasNaQuinzena(ano, mes, quinz) {
       const ultimoDiaMes = new Date(ano, mes, 0).getDate();
       const inicio = quinz === 1 ? 1 : 16;
@@ -2063,7 +1997,6 @@
       );
     }
 
-    // ----------------------- Toast -----------------------
     let toastTimer = null;
     function showToast(msg) {
       const t = document.getElementById("toast");
@@ -2079,7 +2012,6 @@
       el.style.color = cor || "#9ab8d8";
     }
 
-    // ----------------------- Modal confirmação genérico -----------------------
     function confirmar(titulo, texto) {
       return new Promise((resolve) => {
         const overlay = document.getElementById("modalConfirm");
@@ -2109,7 +2041,6 @@
       });
     }
 
-    // ----------------------- Coleta formulário -> state -----------------------
     function coletarFormularioParaState() {
       state.ano = parseInt(document.getElementById("inAno").value) || state.ano;
       state.mes = parseInt(document.getElementById("inMes").value) || state.mes;
@@ -2121,7 +2052,6 @@
         parseFloat(document.getElementById("inBonificacao").value) || 0;
     }
 
-    // ----------------------- Cálculo de totais -----------------------
     function calcularTotais() {
       const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena).map(
         (d) => d.dia
@@ -2156,7 +2086,6 @@
       });
     }
 
-    // ----------------------- Aba 1 – Período & Valores -----------------------
     function initTabCfg() {
       const selMes = document.getElementById("inMes");
       selMes.innerHTML = MESES_PT.slice(1)
@@ -2185,7 +2114,6 @@
     }
 
     function onPeriodoChange() {
-      // Ao trocar mês/quinzena, busca aquela quinzena na nuvem
       carregarPeriodo();
     }
 
@@ -2203,7 +2131,6 @@
       };
     }
 
-    // ----------------------- Aba 2 – Motoristas & Horários -----------------------
     function escapeHtml(s) {
       const d = document.createElement("div");
       d.textContent = s;
@@ -2214,6 +2141,7 @@
       const wrap = document.getElementById("listaMotoristas");
       if (!wrap) return;
       wrap.innerHTML = "";
+
       state.motoristas.forEach((m, i) => {
         const [bgDark, bgLight] = corMotorista(i);
         const card = document.createElement("div");
@@ -2226,9 +2154,21 @@
           <div class="motorista-body" style="background:${bgLight};">
             <div class="row">
               <label>Nome</label>
-              <input type="text" data-action="nome-mot" data-idx="${i}" value="${escapeHtml(
-          m.nome || ""
-        )}" style="width:280px;">
+              <input type="text"
+                     data-action="nome-mot"
+                     data-idx="${i}"
+                     value="${escapeHtml(m.nome || "")}"
+                     style="width:280px;">
+            </div>
+            <div class="row">
+              <label>CPF do motorista</label>
+              <input type="text"
+                     data-action="cpf-mot"
+                     data-idx="${i}"
+                     value="${escapeHtml(m.cpf || "")}"
+                     placeholder="000.000.000-00"
+                     style="width:180px;">
+              <span class="obs-hint">CPF será usado automaticamente nos recibos.</span>
             </div>
             <div class="row">
               <label>Horários</label>
@@ -2241,7 +2181,6 @@
         wrap.appendChild(card);
       });
 
-      // Eventos
       wrap
         .querySelectorAll("[data-action='rem-mot']")
         .forEach((btn) => btn.addEventListener("click", onRemoverMotorista));
@@ -2251,12 +2190,27 @@
           inp.addEventListener("input", debounce(onNomeMotoristaChange, 600));
           inp.addEventListener("blur", onNomeMotoristaBlur);
         });
+
+      wrap
+        .querySelectorAll("[data-action='cpf-mot']")
+        .forEach((inp) => {
+          inp.addEventListener(
+            "input",
+            debounce((e) => {
+              const idx = parseInt(e.target.dataset.idx);
+              if (!state.motoristas[idx]) return;
+              state.motoristas[idx].cpf = e.target.value;
+              salvarSessao();
+            }, 500)
+          );
+        });
     }
 
     function onAddMotorista() {
-      state.motoristas.push({ nome: "", horarios: [2000, 1100] });
+      state.motoristas.push({ nome: "", cpf: "", horarios: [2000, 1100] });
       renderMotoristas();
       rebuildObsSelects();
+      atualizarMotoristasRecibo();
       salvarSessao();
     }
 
@@ -2274,12 +2228,10 @@
 
       state.motoristas.splice(idx, 1);
 
-      // Reorganiza marcações (shift para cima)
       const novasMarc = {};
       Object.keys(state.marcacoes).forEach((key) => {
         const [i, d] = key.split("-").map(Number);
         if (i === idx) {
-          // apaga
         } else if (i > idx) {
           novasMarc[`${i - 1}-${d}`] = state.marcacoes[key];
         } else {
@@ -2288,7 +2240,6 @@
       });
       state.marcacoes = novasMarc;
 
-      // Observações
       state.observacoes = state.observacoes
         .filter((o) => o.motorIdx !== idx)
         .map((o) => {
@@ -2296,7 +2247,6 @@
           return o;
         });
 
-      // Adiantamentos
       state.adiantamentos = state.adiantamentos
         .filter((a) => a.motorIdx !== idx)
         .map((a) => {
@@ -2325,13 +2275,11 @@
       salvarSessao();
     }
 
-    // ----------------------- Aba 3 – Marcações de Ponto -----------------------
     function rebuildGrade() {
       bloquearToggle = true;
       setTimeout(() => (bloquearToggle = false), 250);
 
       const dias = diasNaQuinzena(state.ano, state.mes, state.quinzena);
-      // Garante que todas as chaves existem
       state.motoristas.forEach((m, i) => {
         dias.forEach(({ dia }) => {
           const key = `${i}-${dia}`;
@@ -2425,7 +2373,6 @@
       atualizarResumo();
     }
 
-    // Resumo dos totais
     function atualizarResumo() {
       coletarFormularioParaState();
       const totais = calcularTotais();
@@ -2475,7 +2422,6 @@
         fmtMoeda(totalLiquido);
     }
 
-    // ----------------------- Aba 4 – Observações -----------------------
     function renderObservacoes() {
       const wrap = document.getElementById("listaObs");
       if (!wrap) return;
@@ -2573,7 +2519,6 @@
         .join("; ");
     }
 
-    // ----------------------- Aba 5 – Adiantamentos -----------------------
     function renderAdiantamentos() {
       const wrap = document.getElementById("listaAdiantamentos");
       if (!wrap) return;
@@ -2668,15 +2613,12 @@
         .reduce((s, a) => s + (a.valor || 0), 0);
     }
 
-    // ----------------------- Aba 6 – Escala -----------------------
     function renderEscala() {
-      // Config radio & origem
       document.querySelector(
         `input[name='escQuinz'][value="${state.escala.quinzena || state.quinzena}"]`
       ).checked = true;
       document.getElementById("escOrigem").value = state.escala.origem || "";
 
-      // Lista de pares
       const wrap = document.getElementById("listaEscPares");
       if (!wrap) return;
       wrap.innerHTML = "";
@@ -2753,7 +2695,6 @@
           wrap.appendChild(card);
         });
 
-        // Eventos de Escala
         wrap
           .querySelectorAll("[data-action='esc-rem']")
           .forEach((btn) =>
@@ -2815,7 +2756,6 @@
 
       renderEscPreview();
 
-      // Eventos de quinzena/origem
       document
         .querySelectorAll("input[name='escQuinz']")
         .forEach((r) =>
@@ -2901,7 +2841,6 @@
       salvarSessao();
     }
 
-    // ----------------------- Recibos de Pagamento -----------------------
     function renderEmpresasRecibo() {
       const wrap = document.getElementById("listaEmpresasRec");
       const select = document.getElementById("recEmpresaSelect");
@@ -2948,7 +2887,6 @@
         select.appendChild(opt);
       });
 
-      // Remover empresa
       wrap.querySelectorAll("button[data-idx]").forEach((btn) => {
         btn.addEventListener("click", async (ev) => {
           const idx = parseInt(ev.currentTarget.dataset.idx);
@@ -3000,7 +2938,6 @@
             contato,
           });
 
-          // Limpa campos
           document.getElementById("recEmpresaNome").value = "";
           document.getElementById("recEmpresaCnpj").value = "";
           document.getElementById("recEmpresaEndereco").value = "";
@@ -3018,9 +2955,38 @@
         });
       }
 
-      // Atualiza lista de motoristas no select de recibos
       atualizarMotoristasRecibo();
       renderEmpresasRecibo();
+
+      const periodoInput = document.getElementById("recPeriodo");
+      if (periodoInput) {
+        periodoInput.value = `referente ao serviço prestado na ${state.quinzena}ª quinzena de ${MESES_PT[
+          state.mes
+        ].toLowerCase()} de ${state.ano}.`;
+      }
+
+      const cidadeDataInput = document.getElementById("recCidadeData");
+      if (cidadeDataInput) {
+        cidadeDataInput.value = `Icém – SP, ${new Date().toLocaleDateString("pt-BR")}.`;
+      }
+
+      const selMot = document.getElementById("recMotoristaSelect");
+      if (selMot) {
+        selMot.addEventListener("change", (e) => {
+          const idx = parseInt(e.target.value);
+          const mot = state.motoristas[idx];
+          if (mot) {
+            const nomeRespInput = document.getElementById("recNomeResponsavel");
+            const cpfRespInput = document.getElementById("recCpfResponsavel");
+            if (nomeRespInput && mot.nome) {
+              nomeRespInput.value = mot.nome;
+            }
+            if (cpfRespInput && mot.cpf) {
+              cpfRespInput.value = mot.cpf;
+            }
+          }
+        });
+      }
     }
 
     function atualizarMotoristasRecibo() {
@@ -3038,7 +3004,6 @@
       });
     }
 
-    // Usa o cálculo já existente para pegar o líquido do motorista
     function liquidoMotoristaPorIndice(idx) {
       const totais = calcularTotais();
       const adi = adiantamentoDoMotorista(idx);
@@ -3048,9 +3013,81 @@
       return liqu;
     }
 
-    // Gera texto do recibo e PDF
+    function valorPorExtensoReais(valor) {
+      const unidades = [
+        "zero",
+        "um",
+        "dois",
+        "três",
+        "quatro",
+        "cinco",
+        "seis",
+        "sete",
+        "oito",
+        "nove",
+        "dez",
+        "onze",
+        "doze",
+        "treze",
+        "quatorze",
+        "quinze",
+        "dezesseis",
+        "dezessete",
+        "dezoito",
+        "dezenove",
+      ];
+      const dezenas = [
+        "",
+        "",
+        "vinte",
+        "trinta",
+        "quarenta",
+        "cinquenta",
+        "sessenta",
+        "setenta",
+        "oitenta",
+        "noventa",
+      ];
+      const centenas = [
+        "",
+        "cem",
+        "duzentos",
+        "trezentos",
+        "quatrocentos",
+        "quinhentos",
+        "seiscentos",
+        "setecentos",
+        "oitocentos",
+        "novecentos",
+      ];
+
+      const v = Math.round(valor);
+      if (v === 0) return "zero reais";
+
+      function numeroPorExtenso(n) {
+        if (n < 20) return unidades[n];
+        if (n < 100) {
+          const d = Math.floor(n / 10);
+          const u = n % 10;
+          return dezenas[d] + (u ? " e " + unidades[u] : "");
+        }
+        if (n < 1000) {
+          const c = Math.floor(n / 100);
+          const resto = n % 100;
+          let prefixo = c === 1 && resto > 0 ? "cento" : centenas[c];
+          return prefixo + (resto ? " e " + numeroPorExtenso(resto) : "");
+        }
+        const mil = Math.floor(n / 1000);
+        const resto = n % 1000;
+        const milStr = mil === 1 ? "mil" : numeroPorExtenso(mil) + " mil";
+        return milStr + (resto ? " " + numeroPorExtenso(resto) : "");
+      }
+
+      return numeroPorExtenso(v) + " reais";
+    }
+
     function gerarReciboPagamento() {
-      coletarFormularioParaState(); // garante que ano/mês/quinzena e valores estão atualizados
+      coletarFormularioParaState();
 
       const empIdxStr =
         document.getElementById("recEmpresaSelect").value;
@@ -3070,7 +3107,7 @@
       const nomeResp = document
         .getElementById("recNomeResponsavel")
         .value.trim();
-      const cpfResp = document
+      const cpfRespInput = document
         .getElementById("recCpfResponsavel")
         .value.trim();
 
@@ -3082,16 +3119,26 @@
         alert("Selecione o motorista para o recibo.");
         return;
       }
-      if (!nomeResp || !cpfResp) {
-        alert("Preencha Nome e CPF do responsável pelo recebimento.");
+      if (!nomeResp) {
+        alert("Preencha o Nome do responsável pelo recebimento.");
         return;
       }
 
       const empIdx = parseInt(empIdxStr);
       const motIdx = parseInt(motIdxStr);
       const empresa = state.empresasRecibo[empIdx];
+
+      const cpfMot = (state.motoristas[motIdx] && state.motoristas[motIdx].cpf) || "";
+      const cpfResp = cpfRespInput || cpfMot;
+
+      if (!cpfResp) {
+        alert("Preencha o CPF do responsável ou cadastre o CPF do motorista.");
+        return;
+      }
+
       const liq = liquidoMotoristaPorIndice(motIdx);
       const valorStr = fmtMoeda(liq);
+      const valorExtenso = valorPorExtensoReais(liq);
 
       const nomeMot = nomeMotorista(motIdx);
 
@@ -3110,7 +3157,7 @@
 
       const cidadeDataTexto =
         cidadeData ||
-        `Fronteira – MG, ${new Date().toLocaleDateString("pt-BR")}.`;
+        `Icém – SP, ${new Date().toLocaleDateString("pt-BR")}.`;
 
       const textoRecibo = `
 RECIBO
@@ -3125,7 +3172,7 @@ Eu, ${escapeHtml(
         empresa.endereco || ""
       )}, ${escapeHtml(
         empresa.cidadeUf || ""
-      )}, o valor de ${valorStr}, ${periodoTexto}.
+      )}, o valor de ${valorStr} (${valorExtenso}), ${periodoTexto}
 
 Forma de pagamento:
 ( ${forma === "Dinheiro" ? "X" : " "} ) Dinheiro
@@ -3149,7 +3196,6 @@ ${escapeHtml(empresa.nome)}
 Motorista: ${escapeHtml(nomeMot)}
 `;
 
-      // Mostra preview
       const prev = document.getElementById("reciboPreview");
       if (prev) {
         prev.innerHTML =
@@ -3158,7 +3204,6 @@ Motorista: ${escapeHtml(nomeMot)}
           "</pre>";
       }
 
-      // Gera PDF usando jsPDF
       try {
         const jsPDF = window.jspdf.jsPDF;
         const doc = new jsPDF({
@@ -3205,25 +3250,23 @@ Motorista: ${escapeHtml(nomeMot)}
       }
     }
 
-    // ----------------------- Nova Quinzena -----------------------
-    async function onNovaQuinzena() {
-      const ok = await confirmar(
+    function onNovaQuinzena() {
+      confirmar(
         "Nova Quinzena",
         "Isso vai limpar todas as marcações de ponto, observações e adiantamentos, mantendo os motoristas cadastrados. Tem certeza? Salve o relatório antes se necessário."
-      );
-      if (!ok) return;
-
-      state.marcacoes = {};
-      state.observacoes = [];
-      state.adiantamentos = [];
-      rebuildGrade();
-      renderObservacoes();
-      renderAdiantamentos();
-      salvarSessao();
-      setStatus("Pronto para nova quinzena.", "#27ae60");
+      ).then((ok) => {
+        if (!ok) return;
+        state.marcacoes = {};
+        state.observacoes = [];
+        state.adiantamentos = [];
+        rebuildGrade();
+        renderObservacoes();
+        renderAdiantamentos();
+        salvarSessao();
+        setStatus("Pronto para nova quinzena.", "#27ae60");
+      });
     }
 
-    // ----------------------- Geração de Excel (SheetJS) -----------------------
     function gerarExcel() {
       coletarFormularioParaState();
       if (!state.motoristas.some((m) => m.nome && m.nome.trim())) {
@@ -3284,7 +3327,6 @@ Motorista: ${escapeHtml(nomeMot)}
       setStatus("Excel gerado.", "#27ae60");
     }
 
-       // ----------------------- Geração de PDF geral -----------------------
     function gerarPdfRelatorio() {
       coletarFormularioParaState();
       const totais = calcularTotais();
@@ -3363,7 +3405,6 @@ Motorista: ${escapeHtml(nomeMot)}
       setStatus("PDF gerado.", "#27ae60");
     }
 
-    // ----------------------- Tabs & Botões -----------------------
     function initTabsEBotoes() {
       const tabs = document.querySelectorAll(".tab-btn");
       const contents = document.querySelectorAll(".tab-content");
@@ -3376,7 +3417,6 @@ Motorista: ${escapeHtml(nomeMot)}
           btn.classList.add("active");
           document.getElementById("tab-" + tab).classList.add("active");
 
-          // Quando abre a aba de Recibos, garante selects atualizados
           if (tab === "rec") {
             atualizarMotoristasRecibo();
             renderEmpresasRecibo();
@@ -3420,7 +3460,6 @@ Motorista: ${escapeHtml(nomeMot)}
       document
         .getElementById("btnPdfEsc")
         .addEventListener("click", () => {
-          // aqui você pode futuramente gerar PDF da escala se quiser
           showToast("PDF da escala ainda não implementado.");
         });
       document
@@ -3431,12 +3470,10 @@ Motorista: ${escapeHtml(nomeMot)}
       document
         .getElementById("btnSalvarPdf")
         .addEventListener("click", () => {
-          // já salvamos direto no gerarPdfRelatorio, aqui pode ficar vazio ou ser usado depois
           document.getElementById("modalPdf").classList.remove("show");
         });
     }
 
-    // ----------------------- Render geral -----------------------
     function renderTudo() {
       initTabCfg();
       renderMotoristas();
@@ -3444,10 +3481,9 @@ Motorista: ${escapeHtml(nomeMot)}
       renderObservacoes();
       renderAdiantamentos();
       renderEscala();
-      initRecibos(); // NOVO: prepara aba de recibos
+      initRecibos();
     }
 
-    // ----------------------- Boot -----------------------
     document.addEventListener("DOMContentLoaded", () => {
       initAuth();
     });
