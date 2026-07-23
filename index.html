@@ -884,10 +884,11 @@ async function carregarPeriodo(){
       state.motoristas.forEach((m,i)=>{ if(!m.cpf) tentarAutoCpf(i); });
       showToast("☁️ Período carregado da nuvem.");
     } else {
-      // Período novo: mantém motoristas mas limpa marcações
+      // Período novo: mantém motoristas e as duplas da escala, mas limpa marcações e a frota
       state.marcacoes   = {};
       state.observacoes = [];
-      showToast("Novo período — sem dados anteriores.");
+      limparFrotaEscala();
+      showToast("Novo período — sem dados anteriores. Frota da escala foi limpa.");
     }
   }catch(e){
     ocultarLoading();
@@ -895,6 +896,15 @@ async function carregarPeriodo(){
   }
   renderTudo();
 }
+
+// Limpa apenas os números de ônibus (frota) da escala, mantendo os nomes das duplas
+function limparFrotaEscala(){
+  if(state.escala && Array.isArray(state.escala.pares)){
+    state.escala.pares.forEach(par=>{
+      par.frota_h11 = {};
+      par.frota_h20 = {};
+    });
+  }
 
 // ----------------------- Auth Firebase -----------------------
 function initAuth(){
