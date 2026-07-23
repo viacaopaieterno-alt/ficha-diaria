@@ -1883,7 +1883,7 @@ function renderParesEscala(){
   const wrap = document.getElementById('listaEscPares');
   wrap.innerHTML = "";
   if(!state.escala.pares || state.escala.pares.length===0){
-    wrap.innerHTML = '<div class="empty-msg">Nenhum motorista cadastrado. Clique em "➕ Adicionar Motorista".</div>';
+    wrap.innerHTML = '<div class="empty-msg">Nenhuma dupla cadastrada. Clique em "➕ Adicionar Motorista".</div>';
     return;
   }
   const dias = diasEscala(state.ano, state.mes, state.escala.quinzena);
@@ -1894,17 +1894,23 @@ function renderParesEscala(){
     div.className = "esc-par";
     div.innerHTML = `
       <div class="esc-par-hdr" style="background:${bgD}">
-        <span>Motorista ${pidx+1}: ${escapeHtml(par.mot1||'(sem nome)')}</span>
+        <span>Dupla ${pidx+1}: ${escapeHtml(par.mot1||'(sem nome)')} / ${escapeHtml(par.mot2||'(sem nome)')}</span>
         <button class="btn btn-red btn-sm" data-action="rem-par" data-pidx="${pidx}">✖ Remover</button>
       </div>
       <div class="esc-par-body" style="background:${bgL}">
-        <div class="row" style="margin-bottom:10px;gap:8px;">
-          <label style="min-width:80px;font-weight:700;">Nome:</label>
+        <div class="row" style="margin-bottom:6px;gap:8px;">
+          <label style="min-width:110px;font-weight:700;">Motorista 1:</label>
           <input type="text" data-field="mot1" data-pidx="${pidx}" value="${escapeHtml(par.mot1||'')}"
-            placeholder="Nome completo do motorista" style="width:300px;">
+            placeholder="Nome completo do motorista 1" style="width:300px;">
+        </div>
+        <div class="row" style="margin-bottom:10px;gap:8px;">
+          <label style="min-width:110px;font-weight:700;">Motorista 2:</label>
+          <input type="text" data-field="mot2" data-pidx="${pidx}" value="${escapeHtml(par.mot2||'')}"
+            placeholder="Nome completo do motorista 2" style="width:300px;">
         </div>
         <p style="font-size:.8rem;color:#555;margin:0 0 8px;">
-          Preencha o <b>nº do ônibus (frota)</b> no horário e dia correspondente.
+          Preencha o <b>nº do ônibus (frota)</b> no horário e dia correspondente. Os dois motoristas da dupla
+          compartilham o mesmo horário e a mesma frota.
           <b>C</b> = Cancelado · vazio = não viaja neste horário/dia.
         </p>
         <div class="esc-grid-wrap">
@@ -1945,14 +1951,18 @@ function renderParesEscala(){
       renderParesEscala(); atualizarPreviewEscala(); salvarSessao();
     }));
 
-  // Listeners nome
-  wrap.querySelectorAll('[data-field="mot1"]').forEach(inp=>
+  // Listeners nome (motorista 1 e motorista 2)
+  wrap.querySelectorAll('[data-field="mot1"], [data-field="mot2"]').forEach(inp=>
     inp.addEventListener('input', debounce(e=>{
-      const pidx = parseInt(e.target.dataset.pidx);
-      state.escala.pares[pidx].mot1 = e.target.value;
+      const pidx  = parseInt(e.target.dataset.pidx);
+      const campo = e.target.dataset.field;
+      state.escala.pares[pidx][campo] = e.target.value;
       // Atualiza cabeçalho do card
       const hdr = wrap.querySelectorAll('.esc-par-hdr span')[pidx];
-      if(hdr) hdr.textContent = `Motorista ${pidx+1}: ${e.target.value||'(sem nome)'}`;
+      if(hdr){
+        const p = state.escala.pares[pidx];
+        hdr.textContent = `Dupla ${pidx+1}: ${p.mot1||'(sem nome)'} / ${p.mot2||'(sem nome)'}`;
+      }
       atualizarPreviewEscala(); salvarSessao();
     }, 350)));
 
@@ -1984,22 +1994,24 @@ function atualizarPreviewEscala(){
     </tr></thead><tbody>`;
 
   state.escala.pares.forEach((par,pidx)=>{
-    const nome = par.mot1 || `Motorista ${pidx+1}`;
+    const nomes = [par.mot1 || `Motorista ${pidx+1}A`, par.mot2 || `Motorista ${pidx+1}B`];
     ['11:00','20:00'].forEach(hor=>{
       const fk    = `frota_${hor==='11:00'?'h11':'h20'}`;
       const frota = par[fk] || {};
       const corHor= hor==='11:00' ? '#7fbfff' : '#ffb0b0';
       const bgNome= hor==='11:00' ? '#1e3a5e' : '#3e1e1e';
-      html += `<tr>
-        <td class="td-nome" style="background:${bgNome};">${escapeHtml(nome)}</td>
-        <td class="td-hor" style="color:${corHor};font-weight:700;">${hor}</td>
-        ${dias.map(d=>{
-          const v = frota[d.dia] || '';
-          const u = v.toUpperCase();
-          if(u==='C'||u==='CANCELADO') return `<td><span class="esc-cancelado">CANC.</span></td>`;
-          return `<td>${v ? escapeHtml(v) : '<span style="color:#3a5a7a;font-size:.7rem;">—</span>'}</td>`;
-        }).join('')}
-      </tr>`;
+      nomes.forEach(nome=>{
+        html += `<tr>
+          <td class="td-nome" style="background:${bgNome};">${escapeHtml(nome)}</td>
+          <td class="td-hor" style="color:${corHor};font-weight:700;">${hor}</td>
+          ${dias.map(d=>{
+            const v = frota[d.dia] || '';
+            const u = v.toUpperCase();
+            if(u==='C'||u==='CANCELADO') return `<td><span class="esc-cancelado">CANC.</span></td>`;
+            return `<td>${v ? escapeHtml(v) : '<span style="color:#3a5a7a;font-size:.7rem;">—</span>'}</td>`;
+          }).join('')}
+        </tr>`;
+      });
     });
   });
 
@@ -2009,7 +2021,7 @@ function atualizarPreviewEscala(){
 
 function onAddParEsc(){
   if(!state.escala.pares) state.escala.pares = [];
-  state.escala.pares.push({ mot1:"", frota_h11:{}, frota_h20:{} });
+  state.escala.pares.push({ mot1:"", mot2:"", frota_h11:{}, frota_h20:{} });
   renderParesEscala();
   atualizarPreviewEscala();
   salvarSessao();
@@ -2033,25 +2045,27 @@ function gerarPdfEscala(){
   doc.setFontSize(10); doc.setTextColor(44,74,138);
   doc.text((quinzStr+origem).toUpperCase(), doc.internal.pageSize.getWidth()/2, 20, {align:'center'});
 
-  // Monta tabela: cada motorista tem 2 linhas (11:00 e 20:00)
+ // Monta tabela: cada dupla tem 4 linhas (2 motoristas × 2 horários)
   const head = [["MOTORISTA","HORÁRIO",...dias.map(d=>`${d.dia}
 ${d.sem}`)]];
   const body = [];
   const rowMeta = [];
 
   state.escala.pares.forEach((par,pidx)=>{
-    const nome = par.mot1 || `Motorista ${pidx+1}`;
+    const nomes = [par.mot1 || `Motorista ${pidx+1}A`, par.mot2 || `Motorista ${pidx+1}B`];
     ['11:00','20:00'].forEach(hor=>{
       const fk    = `frota_${hor==='11:00'?'h11':'h20'}`;
       const frota = par[fk] || {};
-      const row   = [nome, hor];
-      dias.forEach(d=>{
-        const v = frota[d.dia] || '';
-        const u = v.toUpperCase();
-        row.push(u==='C'||u==='CANCELADO' ? 'CANC.' : v||'');
+      nomes.forEach(nome=>{
+        const row = [nome, hor];
+        dias.forEach(d=>{
+          const v = frota[d.dia] || '';
+          const u = v.toUpperCase();
+          row.push(u==='C'||u==='CANCELADO' ? 'CANC.' : v||'');
+        });
+        body.push(row);
+        rowMeta.push({pidx, hor, is11: hor==='11:00'});
       });
-      body.push(row);
-      rowMeta.push({pidx, hor, is11: hor==='11:00'});
     });
   });
 
